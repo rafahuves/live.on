@@ -4,34 +4,36 @@
 > Ao terminar uma tarefa importante, atualize a seção "Estado atual".
 
 ## Ideia
-Aplicação **web** que acessa a câmera dos clientes, analisa a imagem e
-**avisa (alerta) quando detecta algo que não deveria estar ali**.
+Live.On é um serviço **B2B** que liga **IA às câmeras de segurança dos negócios**
+(ex.: Intelbras) e **avisa no celular do responsável** quando algo foge da regra:
+falta de EPI, pessoa em área de risco, mesa sem atendimento, cliente que saiu sem pagar,
+porta da câmara fria aberta, posto de trabalho vazio, etc.
 
-- Roda no navegador (sem app nativo).
-- Câmera via `getUserMedia`, exige HTTPS (ou localhost).
-- Fluxo: cliente abre a página → autoriza a câmera → vídeo analisado → alerta.
+- Segmentos: logística, restaurante, varejo, indústria, escritório.
+- Planos/mês: Essencial R$ 199 (até 4 câmeras), Profissional R$ 590, Negócio R$ 2.490,
+  Corporativo a partir de R$ 9.900.
+- Tudo na web.
 
-## Stack (decidida em 2026-11-14)
+## Stack
 - **TypeScript + Next.js 16** (App Router, `src/`) + **Tailwind 4**.
-- **Detecção no navegador**: `@tensorflow/tfjs` + `@tensorflow-models/coco-ssd`
-  (import dinâmico, só no cliente). Vídeo nunca vai para o servidor.
-- Planejado: **Supabase** (auth, Postgres, realtime para alertas) e **Vercel** (deploy/HTTPS).
-- Se precisar de modelo próprio/pesado: servidor Python + YOLO depois.
 - Next 16 tem mudanças: ler `AGENTS.md` e `node_modules/next/dist/docs/` antes de usar APIs novas.
+- A definir: backend de análise de vídeo (provavelmente servidor lendo RTSP das câmeras),
+  banco/login, canal de alertas (a demo mostra notificação tipo ntfy/WhatsApp), deploy.
 
 ## Estado atual (2026-11-14)
-- Pasta: `~/Developer/live.on`. **Nunca** em `~/Documents` (iCloud tira arquivos do disco e quebra o Next/git).
-- Repo: https://github.com/rafahuves/live.on (branch `main`).
-- Feito: `/camera` liga a webcam, detecta objetos (COCO-SSD lite), desenha caixas,
-  alerta com borda vermelha + bipe + lista quando aparece classe proibida.
-- Config em `src/lib/detection-config.ts` (classes, `MIN_SCORE`, cooldown, intervalo).
-- Falta: enviar alertas ao backend (há `TODO` em `CameraMonitor.tsx`), login, deploy.
+- Pasta: `~/Developer/live.on`. **Nunca** em `~/Documents`/`~/Desktop` (iCloud tira arquivos do disco e quebra o Next/git).
+- Repo: https://github.com/rafahuves/live.on (branch `main`). Push é feito pelo usuário no GitHub Desktop.
+- Site principal `/` = **Central de Simulações** (`public/simulacoes.html`), HTML único,
+  cópia fiel do artifact claude.ai/artifact/2SfWBDAyu9W8qCLCMNefwB, servido via rewrite em `next.config.ts`.
+  Vídeos são simulados em canvas; dados fictícios.
+- Identidade visual: branco + roxo `#7C3AED`, fontes Inter / Inter Tight / IBM Plex Mono.
+- Removido em 2026-11-14: protótipo `/camera` (webcam + TensorFlow.js). Não recriar sem pedido.
 
 ## Pontos em aberto
-- O que conta como "algo que não é pra ver" (hoje: classes COCO marcáveis na tela).
-- Quem recebe o alerta e por onde (tela, e-mail, WhatsApp, push...).
-- Privacidade: consentimento do cliente; hoje nenhuma imagem é salva.
+- Como conectar às câmeras reais (RTSP/NVR Intelbras) e onde roda a IA.
+- Canal de alerta definitivo (WhatsApp, push, ntfy...).
+- Privacidade/LGPD: consentimento, retenção de imagens.
 
 ## Convenções
 - Conversa com o usuário em português; textos da interface em pt-BR.
-- Rodar: `npm run dev` → http://localhost:3000/camera. Checar com `npm run lint` e `npm run build`.
+- Rodar: `npm run dev` → http://localhost:3000. Checar com `npm run lint` e `npm run build`.

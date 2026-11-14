@@ -1,38 +1,34 @@
 # live.on
 
-Aplicação web que acessa a câmera do cliente pelo navegador, analisa o vídeo
-e emite um alerta quando detecta algo que não deveria aparecer.
+Live.On conecta IA às câmeras de segurança de negócios (logística, restaurante,
+varejo, indústria, escritório) e avisa no celular do responsável quando algo foge
+da regra.
 
 ## Status
-Protótipo: página `/camera` liga a webcam, detecta objetos no navegador e
-alerta (borda vermelha, som e lista) quando aparece uma classe marcada como proibida.
-Alertas ainda não são enviados a um servidor.
+Fase de demonstração: o site mostra a **Central de Simulações**, com vídeos
+simulados por computador, detecções da IA e alertas. Os dados são fictícios.
+Ainda não há conexão com câmeras reais.
 
 ## Stack
-- **TypeScript + Next.js** (App Router) + Tailwind CSS
-- **Detecção no navegador**: TensorFlow.js + modelo COCO-SSD (o vídeo não sai da máquina do cliente)
-- Planejado: **Supabase** (login, banco, alertas em tempo real) e deploy na **Vercel**
+- TypeScript + Next.js (App Router) + Tailwind CSS
+- A definir: backend de análise de vídeo, banco/login, canal de alertas e deploy
 
 ## Requisitos
 - Node.js 20+
-- Navegador moderno com suporte a `getUserMedia`
-- HTTPS em produção (o navegador bloqueia a câmera fora de HTTPS/localhost)
 
 ## Rodando localmente
 ```bash
 npm install
 npm run dev
 ```
-Abra http://localhost:3000/camera e autorize a câmera.
+Abra http://localhost:3000.
 
 > Não coloque o projeto numa pasta sincronizada pelo iCloud/Dropbox
-> (ex.: `~/Documents` com iCloud): arquivos somem do disco e o Next quebra.
+> (ex.: `~/Documents` ou `~/Desktop` com iCloud): arquivos somem do disco e o Next quebra.
 
 ## Estrutura
-- `src/app/page.tsx`: página inicial
-- `src/app/camera/page.tsx`: página do monitor
-- `src/components/CameraMonitor.tsx`: câmera, loop de detecção e alertas
-- `src/lib/detection-config.ts`: classes proibidas, confiança mínima, intervalos
+- `public/simulacoes.html`: Central de Simulações (HTML único), servida em `/` pelo rewrite em `next.config.ts`
+- `src/app/layout.tsx`, `src/app/globals.css`: base do Next.js para as próximas páginas
 
 ## Arquivos de referência
 - `CLAUDE.md`: contexto para agentes de IA (Claude). Não é documentação para devs.
