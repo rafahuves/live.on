@@ -83,12 +83,20 @@ export async function POST(request: Request) {
 // Gemini (Google AI Studio, plano grátis) — SÓ para a fase de testes. No plano grátis o Google pode usar o que é
 // enviado para treinar os modelos dele: não usar com dados de clientes reais. Devolve null se falhar.
 async function gemini(texto: string, local: string): Promise<{ sugestoes: Sugestao[]; observacao: string } | null> {
-  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+  // Plano grátis às vezes fica sobrecarregado (503): tenta o segundo modelo antes de desistir.
+  for (const model of [process.env.GEMINI_MODEL || "gemini-3.5-flash", "gemini-flash-lite-latest"]) {
+    const out = await geminiModelo(model, texto, local);
+    if (out) return out;
+  }
+  return null;
+}
+
+async function geminiModelo(model: string, texto: string, local: string) {
   try {
     const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY ?? "" },
-      signal: AbortSignal.timeout(20_000),
+      signal: AbortSignal.timeout(15_000),
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: system(local) }] },
         contents: [{ role: "user", parts: [{ text: texto }] }],
@@ -114,7 +122,7 @@ async function gemini(texto: string, local: string): Promise<{ sugestoes: Sugest
       }),
     });
     if (!res.ok) {
-      console.warn(`[sugerir] Gemini respondeu ${res.status}; usando palavras-chave.`);
+      console.warn(`[sugerir] Gemini ${model} respondeu ${res.status}.`);
       return null;
     }
     const data = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
