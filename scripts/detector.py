@@ -40,6 +40,8 @@ TAMPADA_SEG = 30           # imagem "lisa" por 30 s = câmera tampada
 SEM_SINAL_SEG = 120        # 2 min sem imagem = câmera sem sinal
 PERMANENCIA_SEG = 60       # pessoa parada 1 min (se a análise não disser outro limite)
 SUMIU_SEG = 3              # pessoa some por 3 s = a passagem terminou
+JANELA, MINIMO_NA_JANELA = 5, 3  # pessoa precisa aparecer em 3 das últimas 5 imagens (~3 s)
+CONFIRMA = 0.45            # certeza mínima do modelo preciso para confirmar um alerta
 
 
 def log(*a):
@@ -180,6 +182,22 @@ def evento(uid, dados):
         f.write(json.dumps({"ts": datetime.now(FUSO).isoformat(timespec="seconds"), **dados}, ensure_ascii=False) + "\n")
 
 
+def guardar(uid, cam, imagem, caixas, tipo):
+    """Guarda a foto de cada alerta (e dos descartados) em data/alertas/, para conferir depois. Fica 7 dias."""
+    from PIL import ImageDraw
+    pasta = RAIZ / "data" / "alertas" / uid
+    pasta.mkdir(parents=True, exist_ok=True)
+    foto = imagem.copy()
+    d = ImageDraw.Draw(foto)
+    for x1, y1, x2, y2 in caixas:
+        d.rectangle([x1, y1, x2, y2], outline=(234, 179, 8), width=3)
+    foto.save(pasta / f"{datetime.now(FUSO).strftime('%Y%m%d-%H%M%S')}-{cam}-{tipo}.jpg", quality=80)
+    limite = time.time() - 7 * 86400
+    for f in pasta.glob("*.jpg"):
+        if f.stat().st_mtime < limite:
+            f.unlink(missing_ok=True)
+
+
 # ---------------------------------------------------------------- principal
 def main():
     from PIL import Image, ImageDraw, ImageStat
@@ -190,7 +208,7 @@ def main():
     pasta_modelo.mkdir(exist_ok=True)
     os.chdir(pasta_modelo)  # o YOLO baixa o modelo (≈6 MB) aqui na primeira vez
     modelo = YOLO("yolo11n.pt")  # rápido: olha todas as câmeras o tempo todo
-    # Preciso (lento, ~4 s na CPU): só para conferir a imagem quando um alerta de pessoa ia ser descartado.
+    # Preciso (lento, ~4 s na CPU): só confirma a imagem antes de um alerta de pessoa (barra alarme falso).
     preciso = YOLO("yolo11x.pt") if (pasta_modelo / "yolo11x.pt").exists() else None
     # CPU por padrão: a placa de vídeo do Mac (MPS) trava com este PyTorch no macOS 14. O modelo pequeno
     # (yolo11n) leva menos de 0,1 s por imagem na CPU. Para testar a placa: DETECTOR_APARELHO=mps.
@@ -198,7 +216,6 @@ def main():
     torch.set_num_threads(4)  # deixa núcleos livres para o site e o conversor
     log(f"detector ligado (YOLO em {aparelho}).")
 
-    main.ultimo_preciso = 0.0  # no máximo 1 conferência do modelo preciso a cada 5 s (todas as câmeras)
     cameras = {}        # stream -> Camera
     estado = {}         # (uid, cam) -> {"pessoas": bool, "desde": t, "visto": t, "liso_desde": t}
     ultimo_alerta = {}  # (id da análise, cam) -> t
@@ -254,12 +271,20 @@ def main():
             if imagens[i] is None:
                 continue
             caixas = resultados.get(i, [])
-            n = len(caixas)
-            e = estado.setdefault((uid, cam), {"pessoas": False, "desde": t, "visto": 0.0, "liso_desde": None})
+            e = estado.setdefault((uid, cam), {"pessoas": False, "desde": t, "visto": 0.0, "liso_desde": None, "hist": []})
 
-            # Passagem = alguém aparece depois de a imagem ficar vazia por alguns segundos.
+            # Contra alarme falso: só conta "tem pessoa" se ela aparece em pelo menos 3 das últimas 5 imagens
+            # (uns 3 s). Uma sombra, a manta no sofá ou o reflexo do infravermelho por 1 imagem não contam.
+            e["hist"] = (e["hist"] + [bool(caixas)])[-JANELA:]
+            presente = sum(e["hist"]) >= MINIMO_NA_JANELA
+            if presente and caixas:
+                e["caixas"] = caixas
+            caixas = e.get("caixas", []) if presente else []
+            n = len(caixas)
+
+            # Passagem = alguém aparece (de verdade) depois de a imagem ficar vazia por alguns segundos.
             nova_passagem = False
-            if n:
+            if presente:
                 if not e["pessoas"]:
                     e["pessoas"], e["desde"], nova_passagem = True, t, True
                     evento(uid, {"cam": cam, "tipo": "passagem", "pessoas": n})
@@ -271,7 +296,8 @@ def main():
             desvio = sum(ImageStat.Stat(imagens[i].convert("L")).stddev)
             e["liso_desde"] = (e["liso_desde"] or t) if desvio < 6 else None
 
-            nomes = nomes_das_cameras(uid)
+            # Quais análises desta câmera disparam agora.
+            disparadas = []
             for a in analises(uid):
                 if a.get("cameras") and cam not in a["cameras"]:
                     continue
@@ -280,17 +306,9 @@ def main():
                 tipo, limite = a["tipo"], a.get("limite")
                 disparar = False
                 if tipo in ("pessoa_fora_do_horario", "invasao_de_area"):
-                    disparar = n > 0
-                    # O rápido não viu ninguém, mas pode ter perdido (pessoa deitada, pequena): o preciso confere
-                    # no máximo 1x por minuto por câmera e 1x a cada 5 s no total, para não pesar.
-                    if not disparar and preciso and t - e.get("conferido", 0) > 60 and t - main.ultimo_preciso > 5:
-                        e["conferido"] = main.ultimo_preciso = t
-                        rx = preciso.predict(imagens[i], classes=[0], conf=0.30, device=aparelho, verbose=False)[0]
-                        caixas = [tuple(map(float, b)) for b in rx.boxes.xyxy.tolist()]
-                        n = len(caixas)
-                        disparar = n > 0
+                    disparar = presente
                 elif tipo == "contagem_de_pessoas":
-                    disparar = n > (limite or 5)
+                    disparar = presente and n > (limite or 5)
                 elif tipo == "permanencia_em_area":
                     disparar = e["pessoas"] and t - e["desde"] >= (limite * 60 if limite else PERMANENCIA_SEG)
                 elif tipo == "passagens_por_area" and nova_passagem:
@@ -300,27 +318,48 @@ def main():
                     disparar = bool(limite) and contagem[k] == limite + 1  # avisa quando passa do limite
                 elif tipo == "camera_sem_sinal_ou_tampada":
                     disparar = e["liso_desde"] is not None and t - e["liso_desde"] >= TAMPADA_SEG
-                if not disparar:
-                    continue
-                k = (a["id"], cam)
-                if t - ultimo_alerta.get(k, 0) < ESPERA_ALERTA:
-                    continue
-                ultimo_alerta[k] = t
+                if disparar and t - ultimo_alerta.get((a["id"], cam), 0) >= ESPERA_ALERTA:
+                    disparadas.append(a)
+            if not disparadas:
+                continue
 
-                # Print com as pessoas marcadas.
-                foto = imagens[i].copy()
-                d = ImageDraw.Draw(foto)
-                for x1, y1, x2, y2 in caixas:
-                    d.rectangle([x1, y1, x2, y2], outline=(124, 58, 237), width=4)
-                buf = io.BytesIO()
-                foto.save(buf, "JPEG", quality=85)
-                nome = nomes.get(cam, cam)
-                texto = f"🔔 {a['mensagem_alerta']}\n📷 {nome}\n🕒 {agora.strftime('%d/%m %H:%M')}"
-                if n:
-                    texto += f"\n👤 {n} pessoa{'s' if n > 1 else ''} na imagem"
-                ok = alertar(uid, texto, buf.getvalue())
+            # Alerta de pessoa: o modelo PRECISO tem que confirmar na imagem de agora (barra alarme falso).
+            de_pessoa = [a for a in disparadas if a["tipo"] != "camera_sem_sinal_ou_tampada"]
+            if de_pessoa and preciso:
+                if t - e.get("recusado", 0) < 60:
+                    disparadas = [a for a in disparadas if a not in de_pessoa]
+                else:
+                    rx = preciso.predict(imagens[i], classes=[0], conf=CONFIRMA, device=aparelho, verbose=False)[0]
+                    if len(rx.boxes):
+                        caixas = [tuple(map(float, b)) for b in rx.boxes.xyxy.tolist()]
+                        n = len(caixas)
+                    else:
+                        e["recusado"] = t
+                        log(f"descartado (o modelo preciso não viu pessoa): {cam}")
+                        guardar(uid, cam, imagens[i], resultados.get(i, []), "descartado")
+                        disparadas = [a for a in disparadas if a not in de_pessoa]
+            if not disparadas:
+                continue
+            for a in disparadas:
+                ultimo_alerta[(a["id"], cam)] = t
+
+            # UMA mensagem por câmera, mesmo que várias análises disparem juntas. Print com as pessoas marcadas.
+            foto = imagens[i].copy()
+            d = ImageDraw.Draw(foto)
+            for x1, y1, x2, y2 in caixas:
+                d.rectangle([x1, y1, x2, y2], outline=(124, 58, 237), width=4)
+            buf = io.BytesIO()
+            foto.save(buf, "JPEG", quality=85)
+            nome = nomes_das_cameras(uid).get(cam, cam)
+            motivos = list(dict.fromkeys(a["mensagem_alerta"] for a in disparadas))
+            texto = "🔔 " + "\n🔔 ".join(motivos) + f"\n📷 {nome}\n🕒 {agora.strftime('%d/%m %H:%M')}"
+            if n:
+                texto += f"\n👤 {n} pessoa{'s' if n > 1 else ''} na imagem"
+            ok = alertar(uid, texto, buf.getvalue())
+            guardar(uid, cam, foto, [], "alerta")
+            for a in disparadas:
                 evento(uid, {"cam": cam, "tipo": "alerta", "analise": a.get("nome"), "enviado": ok})
-                log(f"alerta {'enviado' if ok else 'NÃO enviado'}: {a.get('nome')} · {nome}")
+            log(f"alerta {'enviado' if ok else 'NÃO enviado'}: {', '.join(a.get('nome', '') for a in disparadas)} · {nome}")
 
         # Câmera sem imagem há muito tempo = sem sinal (avisa as análises de câmera tampada/sem sinal).
         for uid, cams in contas.items():
