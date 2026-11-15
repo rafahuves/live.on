@@ -1,5 +1,5 @@
 // Rota interna: o detector (scripts/detector.py, no mesmo computador) manda um alerta com foto e o site entrega
-// no Telegram da conta. Só aceita chamadas de 127.0.0.1 com a chave local (LIVEON_LOCAL_KEY).
+// no Telegram da conta. Só aceita chamadas deste computador (não pelo túnel) com a chave local (LIVEON_LOCAL_KEY).
 import { timingSafeEqual } from "node:crypto";
 import { enviarAlerta } from "@/lib/telegram";
 
@@ -10,8 +10,8 @@ function chaveOk(recebida: string | null) {
 }
 
 export async function POST(request: Request) {
-  const host = new URL(request.url).hostname;
-  if (!["localhost", "127.0.0.1", "::1", "[::1]"].includes(host) || request.headers.has("x-forwarded-for")) {
+  // Pedido vindo de fora (pelo túnel da Cloudflare) traz estes cabeçalhos: recusa. A proteção principal é a chave.
+  if (request.headers.has("cf-connecting-ip") || request.headers.has("cf-ray")) {
     return new Response("Não encontrado.", { status: 404 });
   }
   if (!chaveOk(request.headers.get("x-liveon-key"))) return new Response("Não autorizado.", { status: 401 });
