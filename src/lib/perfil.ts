@@ -87,3 +87,24 @@ export function analisesDoPerfil(p: Perfil): AnaliseInput[] {
   }
   return out;
 }
+
+// ---- Nome da empresa da conta (aparece no robô: "Live.On - <empresa>") ----
+// Guardado à parte (data/empresa/<id>.json) para poder ser trocado pelo chat mesmo sem configuração salva.
+const empresaFile = (userId: string) => path.join(path.dirname(fileFor(userId)), "..", "empresa", `${userId}.json`);
+
+export async function salvarEmpresa(userId: string, empresa: string) {
+  const file = empresaFile(userId);
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, JSON.stringify({ empresa: empresa.trim().slice(0, 50) }));
+  const perfil = await loadPerfil(userId);
+  if (perfil && perfil.empresa !== empresa.trim()) await savePerfil(userId, { ...perfil, empresa: empresa.trim().slice(0, 50) });
+}
+
+/** Empresa da conta: a escolhida (chat ou configuração) ou, se não houver, a do cadastro. */
+export async function empresaDaConta(userId: string, doCadastro?: string | null): Promise<string | null> {
+  try {
+    const { empresa } = JSON.parse(await readFile(empresaFile(userId), "utf8")) as { empresa?: string };
+    if (empresa?.trim()) return empresa.trim();
+  } catch {}
+  return (await loadPerfil(userId))?.empresa?.trim() || doCadastro || null;
+}

@@ -1,15 +1,13 @@
 import { getCurrentUser } from "@/lib/supabase/server";
-import { activeChannels, loadDvr } from "@/lib/dvr";
-import { fotoDaCamera } from "@/lib/fotos";
-import { loadPerfil } from "@/lib/perfil";
-import { enviarAlerta, removeLink, telegramConfigured, telegramStatus, verifyLink } from "@/lib/telegram";
+import { alertaDeTeste } from "@/lib/alertaTeste";
+import { empresaDaConta } from "@/lib/perfil";
+import { removeLink, telegramConfigured, telegramStatus, verifyLink } from "@/lib/telegram";
 
 // Telegram da conta (fase de testes): status, ligar (verificar), alerta de teste com foto, desligar.
 export async function GET() {
   const user = await getCurrentUser();
   if (!user) return Response.json({ error: "Faça login de novo." }, { status: 401 });
-  const perfil = await loadPerfil(user.id);
-  return Response.json(await telegramStatus(user.id, perfil?.empresa || user.company, user.name));
+  return Response.json(await telegramStatus(user.id, await empresaDaConta(user.id, user.company), user.name));
 }
 
 export async function POST(request: Request) {
@@ -29,18 +27,9 @@ export async function POST(request: Request) {
       return Response.json({ conectado: false });
     }
     if (acao === "teste") {
-      const dvr = await loadDvr(user.id);
-      const canais = dvr ? activeChannels(dvr) : [];
-      const canal = canais.includes(Number(ch)) ? Number(ch) : canais[0];
-      const perfil = await loadPerfil(user.id);
-      const nome = perfil?.cameras.find((c) => c.ch === canal)?.nome || (canal ? `Câmera ${canal}` : "");
-      const foto = dvr && canal ? await fotoDaCamera(user.id, dvr, canal, 5_000) : null; // print do momento
-      const hora = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" });
-      const texto = `🔔 Live.On — alerta de TESTE\n📷 ${nome || "sem câmera"}\n🕒 ${hora}\n\nAssim vão chegar os seus alertas, com a foto do momento.`;
-      if (!(await enviarAlerta(user.id, texto, foto))) {
-        return Response.json({ error: "Conecte o Telegram primeiro." }, { status: 400 });
-      }
-      return Response.json({ enviado: true, comFoto: !!foto });
+      const r = await alertaDeTeste(user.id, ch);
+      if (!r.enviado) return Response.json({ error: "Conecte o Telegram primeiro." }, { status: 400 });
+      return Response.json(r);
     }
     return Response.json({ error: "Ação inválida." }, { status: 400 });
   } catch {

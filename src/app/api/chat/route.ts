@@ -4,9 +4,9 @@
 // o mesmo do robô do Telegram.
 import { getCurrentUser } from "@/lib/supabase/server";
 import { listAnalises, type Analise } from "@/lib/analises";
-import { loadPerfil } from "@/lib/perfil";
+import { empresaDaConta } from "@/lib/perfil";
 import { conversar, iaConfigurada, type Msg } from "@/lib/assistente";
-import { salvarAnalise } from "@/lib/ferramentas";
+import { ferramentasTelegram, salvarAnalise } from "@/lib/ferramentas";
 import { systemPrompt } from "@/lib/prompt";
 import { telegramStatus, telegramTexto } from "@/lib/telegram";
 
@@ -22,8 +22,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "Histórico inválido." }, { status: 400 });
   }
 
-  const perfil = await loadPerfil(user.id);
-  const empresa = perfil?.empresa || user.company;
+  const empresa = await empresaDaConta(user.id, user.company);
   const tg = await telegramStatus(user.id, empresa, user.name);
   const system = await systemPrompt(user.id, { canal: "site", robo: tg.nomeRobo ?? "Live.On", telegram: telegramTexto(tg), cliente: user.name });
   // Depois de salvar: confere de novo (a pessoa pode ter acabado de tocar em "Começar").
@@ -32,7 +31,10 @@ export async function POST(request: Request) {
   const saved: Analise[] = [];
 
   try {
-    const messages = await conversar(system, history, [salvarAnalise(user.id, aposSalvar, (a) => saved.push(a))]);
+    const messages = await conversar(system, history, [
+      salvarAnalise(user.id, aposSalvar, (a) => saved.push(a)),
+      ...ferramentasTelegram(user.id, user.name, user.company, "site"),
+    ]);
     return Response.json({ messages, saved, analises: await listAnalises(user.id) });
   } catch (e) {
     return Response.json({ error: e instanceof Error ? e.message : "Erro da IA." }, { status: 502 });

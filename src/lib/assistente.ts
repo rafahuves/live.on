@@ -101,7 +101,12 @@ async function gemini(system: string, history: Msg[], ferramentas: Ferramenta[])
   const contents: GeminiContent[] = history
     .map((m) => ({ role: m.role === "assistant" ? ("model" as const) : ("user" as const), parts: [{ text: textoDe(m) }] }))
     .filter((c) => c.parts[0].text);
-  const decl = ferramentas.map((f) => ({ name: f.name, description: f.description, parameters: paraGemini(f.schema) }));
+  // Ferramenta sem campos vai sem "parameters" (o Gemini recusa objeto vazio).
+  const decl = ferramentas.map((f) => ({
+    name: f.name,
+    description: f.description,
+    ...(Object.keys(f.schema.properties).length ? { parameters: paraGemini(f.schema) } : {}),
+  }));
 
   for (let volta = 0; volta < 4; volta++) {
     const parts = await geminiGenerate({

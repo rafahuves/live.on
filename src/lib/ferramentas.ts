@@ -3,6 +3,9 @@ import { DIAS, TIPOS, addAnalise, validarAnalise, type Analise } from "./analise
 import { activeChannels, loadDvr } from "./dvr";
 import { fotoDaCamera } from "./fotos";
 import type { Ferramenta } from "./assistente";
+import { alertaDeTeste } from "./alertaTeste";
+import { empresaDaConta, salvarEmpresa } from "./perfil";
+import { ajustarNomeDoRobo, nomeDoRobo, registrarCodigo, telegramStatus, telegramTexto } from "./telegram";
 
 export function salvarAnalise(userId: string, aposSalvar: (id: string) => Promise<string>, onSaved?: (a: Analise) => void): Ferramenta {
   return {
@@ -59,4 +62,56 @@ export function fotoCamera(userId: string, enviar: (jpg: ArrayBuffer, legenda: s
       return "Foto enviada ao cliente. Não repita a foto; comente em uma frase se quiser.";
     },
   };
+}
+
+/** Telegram pelo chat: situação + link do robô, alerta de teste e nome da empresa no robô. */
+export function ferramentasTelegram(userId: string, cliente: string | null, doCadastro: string | null, canal: "site" | "telegram"): Ferramenta[] {
+  const vazio = { type: "object" as const, additionalProperties: false as const, properties: {}, required: [] as string[] };
+  const lista: Ferramenta[] = [
+    {
+      name: "alerta_teste",
+      description: "Manda um alerta de TESTE no Telegram do cliente, com a foto de agora de uma câmera. Use quando ele pedir para testar.",
+      schema: {
+        type: "object",
+        additionalProperties: false,
+        required: ["camera"],
+        properties: { camera: { type: ["string", "null"], description: "Código da câmera (ex.: 'cam7') ou null para a principal" } },
+      },
+      async run(args) {
+        const ch = args.camera ? Number(String(args.camera).replace(/\D/g, "")) : undefined;
+        const r = await alertaDeTeste(userId, ch);
+        if (!r.enviado) return `Não enviei: o Telegram ainda não está ligado. ${telegramTexto(await telegramStatus(userId, await empresaDaConta(userId, doCadastro), cliente))}`;
+        return r.comFoto ? "Alerta de teste enviado no Telegram, com a foto da câmera." : "Alerta de teste enviado, mas sem foto (o gravador não deu imagem agora).";
+      },
+    },
+    {
+      name: "nome_da_empresa",
+      description: 'Troca o nome da empresa do cliente. O robô do Telegram passa a se chamar "Live.On - <empresa>".',
+      schema: {
+        type: "object",
+        additionalProperties: false,
+        required: ["empresa"],
+        properties: { empresa: { type: "string", description: "Nome da empresa, ex.: 'VS Transporte'" } },
+      },
+      async run(args) {
+        const empresa = String(args.empresa ?? "").trim().slice(0, 50);
+        if (!empresa) return "Nome vazio.";
+        await salvarEmpresa(userId, empresa);
+        await ajustarNomeDoRobo(empresa);
+        await registrarCodigo(userId, empresa, cliente);
+        return `Pronto: o robô agora se chama "${nomeDoRobo(empresa)}" (o Telegram pode levar alguns minutos para mostrar o nome novo).`;
+      },
+    },
+  ];
+  if (canal === "site") {
+    lista.unshift({
+      name: "situacao_telegram",
+      description: "Confere se o Telegram do cliente já está ligado e devolve o link do robô se não estiver. Use quando ele quiser ligar/configurar o Telegram ou perguntar se já ligou.",
+      schema: vazio,
+      async run() {
+        return telegramTexto(await telegramStatus(userId, await empresaDaConta(userId, doCadastro), cliente));
+      },
+    });
+  }
+  return lista;
 }

@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/supabase/server";
 import { activeChannels, loadDvr } from "@/lib/dvr";
 import { replaceConfigAnalises } from "@/lib/analises";
-import { analisesDoPerfil, savePerfil, validarPerfil } from "@/lib/perfil";
+import { analisesDoPerfil, empresaDaConta, salvarEmpresa, savePerfil, validarPerfil } from "@/lib/perfil";
 import { ajustarNomeDoRobo, registrarCodigo, telegramConfigured } from "@/lib/telegram";
 
 export async function salvarConfiguracao(perfil: unknown): Promise<{ error: string }> {
@@ -18,8 +18,10 @@ export async function salvarConfiguracao(perfil: unknown): Promise<{ error: stri
   await savePerfil(user.id, ok);
   await replaceConfigAnalises(user.id, analisesDoPerfil(ok));
   if (telegramConfigured()) {
-    await ajustarNomeDoRobo(ok.empresa || user.company);
-    await registrarCodigo(user.id, ok.empresa || user.company, user.name);
+    if (ok.empresa?.trim()) await salvarEmpresa(user.id, ok.empresa);
+    const empresa = await empresaDaConta(user.id, user.company);
+    await ajustarNomeDoRobo(empresa);
+    await registrarCodigo(user.id, empresa, user.name);
   }
   revalidatePath("/analises");
   revalidatePath("/cameras");

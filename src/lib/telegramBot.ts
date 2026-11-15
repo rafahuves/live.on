@@ -6,8 +6,8 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { conversar, iaConfigurada, textoDe, type Msg } from "./assistente";
-import { fotoCamera, salvarAnalise } from "./ferramentas";
-import { loadPerfil } from "./perfil";
+import { ferramentasTelegram, fotoCamera, salvarAnalise } from "./ferramentas";
+import { empresaDaConta } from "./perfil";
 import { systemPrompt } from "./prompt";
 import { listAnalises } from "./analises";
 import { cameraNames } from "./prompt";
@@ -103,9 +103,9 @@ async function tratar(m: NonNullable<Update["message"]>) {
     const c = code ? await donoDoCodigo(code) : null;
     if (c) {
       await salvarLink(c.userId, chatId, [m.chat.first_name, m.chat.last_name].filter(Boolean).join(" ") || primeiroNome);
-      const perfil = await loadPerfil(c.userId);
-      await ajustarNomeDoRobo(perfil?.empresa || c.empresa);
-      return boasVindas(chatId, { ...c, empresa: perfil?.empresa || c.empresa }, primeiroNome);
+      const empresa = await empresaDaConta(c.userId, c.empresa);
+      await ajustarNomeDoRobo(empresa);
+      return boasVindas(chatId, { ...c, empresa }, primeiroNome);
     }
     const dono = await contaDoChat(chatId);
     if (dono) return sendText(chatId, "Você já está conectado ✅ Pode me mandar uma mensagem.");
@@ -119,8 +119,7 @@ async function tratar(m: NonNullable<Update["message"]>) {
   if (!iaConfigurada()) return sendText(chatId, "A IA ainda não foi configurada neste computador.");
 
   await call("sendChatAction", { chat_id: chatId, action: "typing" }).catch(() => {});
-  const perfil = await loadPerfil(userId);
-  const robo = nomeDoRobo(perfil?.empresa);
+  const robo = nomeDoRobo(await empresaDaConta(userId));
   const system = await systemPrompt(userId, { canal: "telegram", robo, telegram: "conectado (esta conversa)", cliente: primeiroNome });
   const historico = await lerConversa(userId);
   const comPergunta: Msg[] = [...historico, { role: "user", content: texto }];
@@ -128,6 +127,7 @@ async function tratar(m: NonNullable<Update["message"]>) {
     const out = await conversar(system, comPergunta, [
       salvarAnalise(userId, async (id) => `Análise salva com id ${id}. Os alertas vão chegar aqui no Telegram, com foto.`),
       fotoCamera(userId, (jpg, legenda) => sendPhoto(chatId, jpg, legenda)),
+      ...ferramentasTelegram(userId, primeiroNome, null, "telegram"),
     ]);
     const resposta = textoDe(out[out.length - 1]) || "Feito ✅";
     await sendText(chatId, resposta);
