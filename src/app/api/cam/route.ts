@@ -1,6 +1,7 @@
 import { getCurrentUser } from "@/lib/supabase/server";
 import { loadDvr, streamPrefix } from "@/lib/dvr";
 import { acquire, dvrHealthy, liveCount, MAX_LIVE, pausedFor, reportFailure, reportSuccess } from "@/lib/dvrGuard";
+import { ensureShield, shieldBlockedFor } from "@/lib/dvrShield";
 
 // Vídeo ao vivo de uma câmera em MJPEG. TODO vídeo passa por aqui, e aqui ficam as travas que
 // protegem o gravador do cliente (src/lib/dvrGuard.ts): limite de câmeras ao mesmo tempo, teste leve
@@ -23,8 +24,10 @@ export async function GET(request: Request) {
 
   // Situação atual, para a tela explicar por que uma câmera não abriu.
   if (params.has("status")) {
+    const d = await loadDvr(user.id);
+    const blocked = d ? shieldBlockedFor(d.host, d.port) : 0;
     return Response.json(
-      { live: liveCount(user.id), max: MAX_LIVE, pausedFor: pausedFor(user.id) },
+      { live: liveCount(user.id), max: MAX_LIVE, pausedFor: Math.max(pausedFor(user.id), blocked) },
       { headers: { "Cache-Control": "no-store" } },
     );
   }
@@ -47,7 +50,14 @@ export async function GET(request: Request) {
       release();
       return fail(404, "Nenhum gravador conectado.");
     }
-    if (!(await dvrHealthy(user.id, dvr.host, dvr.port))) {
+    // Escudo: toda conexão com o gravador passa por ele (src/lib/dvrShield.ts).
+    const shield = await ensureShield(dvr.host, dvr.port);
+    const blocked = shieldBlockedFor(dvr.host, dvr.port);
+    if (blocked > 0) {
+      release();
+      return fail(503, `O gravador não respondeu. Nova tentativa em ${blocked} s.`, blocked);
+    }
+    if (!(await dvrHealthy(user.id, "127.0.0.1", shield))) {
       release();
       return fail(503, "O gravador não respondeu. O Live.On vai esperar antes de tentar de novo.", pausedFor(user.id));
     }

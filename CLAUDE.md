@@ -54,6 +54,10 @@ quando algo importante acontece (ex.: pessoa fora do horário, câmera tampada).
   `LIVEON_MAX_CAMS` (padrão 4) câmeras ao vivo por conta, teste leve (RTSP OPTIONS) antes de abrir, e pausa crescente
   (30 s → 10 min) quando o gravador não responde. A tela (`CameraGrid`) liga uma câmera por vez e não tenta de novo
   sozinha; o HD pausa a grade. Não criar caminho de vídeo que pule essas travas.
+  **Escudo (`src/lib/dvrShield.ts`)**: nada conecta direto no gravador. As URLs RTSP no go2rtc apontam para
+  `127.0.0.1:<porta do escudo>` e só o escudo fala com o DVR: máx. 5 conexões juntas, 12 novas/min, bloqueio
+  crescente se o gravador não responde. Testado em 2026-11-15 com rajada de 11 câmeras: escudo segurou, DVR ok.
+  A análise em Python (futura) também deve ler do go2rtc, nunca do gravador.
 - **Análises personalizadas** (`/analises`): chat com a Claude (`claude-opus-5-5`, effort low, `fallbacks: "default"`) em
   `src/app/api/chat/route.ts`; a ferramenta `salvar_analise` (strict) grava em `data/analises/<id da conta>.json` (local, fora do Git).
   O cliente guarda o histórico completo e só acrescenta (não editar mensagens antigas: quebra os blocos de thinking).

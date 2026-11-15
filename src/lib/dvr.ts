@@ -3,6 +3,7 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { ensureShield, shieldPort } from "./dvrShield";
 
 export type Dvr = { host: string; port: number; user: string; pass: string; channels: number };
 
@@ -52,9 +53,10 @@ export async function deleteDvr(userId: string) {
 }
 
 // Padrão RTSP Intelbras/Dahua: subtype=1 é o stream leve; subtype=0 o principal (HD).
+// O endereço aponta para o ESCUDO (127.0.0.1), nunca direto para o gravador: ver src/lib/dvrShield.ts.
 function rtspUrl(d: Dvr, ch: number, sub: 0 | 1) {
   const auth = `${encodeURIComponent(d.user)}:${encodeURIComponent(d.pass)}`;
-  return `rtsp://${auth}@${d.host}:${d.port}/cam/realmonitor?channel=${ch}&subtype=${sub}`;
+  return `rtsp://${auth}@127.0.0.1:${shieldPort(d.host, d.port)}/cam/realmonitor?channel=${ch}&subtype=${sub}`;
 }
 
 export async function go2rtcOnline(): Promise<boolean> {
@@ -66,9 +68,19 @@ export async function go2rtcOnline(): Promise<boolean> {
   }
 }
 
-async function streamNames(): Promise<string[]> {
+type Streams = Record<string, { producers?: { url?: string }[] | null }>;
+
+async function streams(): Promise<Streams> {
   const res = await fetch(`${GO2RTC}/api/streams`, { cache: "no-store", signal: AbortSignal.timeout(1500) });
-  return Object.keys((await res.json()) as Record<string, unknown>);
+  return (await res.json()) as Streams;
+}
+
+async function streamNames(): Promise<string[]> {
+  return Object.keys(await streams());
+}
+
+async function deleteStream(name: string) {
+  await fetch(`${GO2RTC}/api/streams?src=${encodeURIComponent(name)}`, { method: "DELETE", signal: AbortSignal.timeout(2000) });
 }
 
 // O go2rtc roda sem arquivo de configuração: as câmeras ficam só na memória dele (a senha não vai para disco).
@@ -82,21 +94,26 @@ async function removeStreams(userId: string) {
   if (!(await go2rtcOnline())) return;
   const prefix = streamPrefix(userId);
   for (const n of await streamNames()) {
-    if (n.startsWith(prefix)) {
-      await fetch(`${GO2RTC}/api/streams?src=${encodeURIComponent(n)}`, { method: "DELETE", signal: AbortSignal.timeout(2000) });
-    }
+    if (n.startsWith(prefix)) await deleteStream(n);
   }
 }
 
 // Garante que as câmeras desta conta estão no go2rtc (ele perde tudo quando reinicia). Devolve os nomes, em ordem.
 export async function ensureStreams(userId: string, dvr: Dvr): Promise<string[]> {
+  await ensureShield(dvr.host, dvr.port);
   const prefix = streamPrefix(userId);
-  const existing = new Set(await streamNames());
+  const current = await streams();
+  // Só aceita câmera que passa pelo escudo; qualquer uma apontando direto para o gravador é refeita.
+  const ok = (name: string, url: string) => current[name]?.producers?.some((p) => p.url === url);
   const names: string[] = [];
   for (let ch = 1; ch <= dvr.channels; ch++) {
     const name = `${prefix}cam${ch}`;
-    if (!existing.has(name)) await putStream(name, rtspUrl(dvr, ch, 1));
-    if (!existing.has(`${name}_hd`)) await putStream(`${name}_hd`, rtspUrl(dvr, ch, 0));
+    for (const [n, url] of [[name, rtspUrl(dvr, ch, 1)], [`${name}_hd`, rtspUrl(dvr, ch, 0)]]) {
+      if (ok(n, url)) continue;
+      if (current[n]) await deleteStream(n);
+      if (current[`${n}_mjpeg`]) await deleteStream(`${n}_mjpeg`);
+      await putStream(n, url);
+    }
     names.push(name);
   }
   return names;
@@ -104,6 +121,7 @@ export async function ensureStreams(userId: string, dvr: Dvr): Promise<string[]>
 
 // Testa usuário/senha/IP pegando uma imagem do canal 1. Com dados errados o go2rtc devolve imagem vazia.
 export async function testDvr(dvr: Dvr): Promise<boolean> {
+  await ensureShield(dvr.host, dvr.port);
   const name = `teste_${randomBytes(4).toString("hex")}`;
   await putStream(name, rtspUrl(dvr, 1, 1));
   try {
