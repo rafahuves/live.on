@@ -1,6 +1,6 @@
 import { getCurrentUser } from "@/lib/supabase/server";
 import { activeChannels, loadDvr, streamPrefix } from "@/lib/dvr";
-import { acquire, dvrHealthy, liveCount, pausedFor, reportFailure, reportSuccess } from "@/lib/dvrGuard";
+import { dvrHealthy, openCameras, pausedFor, reportFailure, reportSuccess } from "@/lib/dvrGuard";
 import { ensureShield, shieldBlockedFor } from "@/lib/dvrShield";
 
 // Vídeo ao vivo de uma câmera em MJPEG. TODO vídeo passa por aqui, e aqui ficam as travas que
@@ -62,7 +62,7 @@ export async function GET(request: Request) {
   // Situação atual, para a tela explicar por que uma câmera não abriu.
   if (params.has("status")) {
     return Response.json(
-      { live: liveCount(user.id), max, pausedFor: Math.max(pausedFor(user.id), shieldBlockedFor(dvr.host, dvr.port)) },
+      { live: (await openCameras(streamPrefix(user.id)).catch(() => new Set())).size, max, pausedFor: Math.max(pausedFor(user.id), shieldBlockedFor(dvr.host, dvr.port)) },
       { headers: { "Cache-Control": "no-store" } },
     );
   }
@@ -75,8 +75,15 @@ export async function GET(request: Request) {
   if (wait > 0) return fail(503, `O gravador não respondeu. Nova tentativa em ${wait} s.`, wait);
 
   // Trava 1: limite de câmeras ao vivo ao mesmo tempo.
-  const release = acquire(user.id, src, max);
-  if (!release) return fail(429, `Limite de ${max} vídeos ao vivo ao mesmo tempo.`, 5);
+  // Câmera já aberta (outra pessoa/aba vendo) não custa conexão nova; câmera nova só se houver vaga.
+  let open: Set<string>;
+  try {
+    open = await openCameras(streamPrefix(user.id));
+  } catch {
+    return fail(503, "O conversor de vídeo está desligado.");
+  }
+  if (!open.has(src) && open.size >= max) return fail(429, `Limite de ${max} vídeos ao vivo ao mesmo tempo.`, 5);
+  const release = () => {};
 
   try {
     // Escudo: toda conexão com o gravador passa por ele (src/lib/dvrShield.ts).

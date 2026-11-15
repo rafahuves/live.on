@@ -99,3 +99,15 @@ export function acquire(userId: string, stream: string, max: number): (() => voi
     else s.live.set(stream, n);
   };
 }
+
+/** Câmeras com vídeo aberto AGORA, contadas pelo próprio go2rtc (a fonte da verdade: cada uma = 1 conexão
+ *  no gravador, não importa quantas pessoas estão vendo). Não depende de o navegador avisar que fechou. */
+export async function openCameras(prefix: string): Promise<Set<string>> {
+  const res = await fetch("http://127.0.0.1:1984/api/streams", { cache: "no-store", signal: AbortSignal.timeout(1500) });
+  const all = (await res.json()) as Record<string, { consumers?: unknown[] | null }>;
+  const open = new Set<string>();
+  for (const [name, v] of Object.entries(all)) {
+    if (name.startsWith(prefix) && !name.endsWith("_mjpeg") && (v.consumers?.length ?? 0) > 0) open.add(name);
+  }
+  return open;
+}
