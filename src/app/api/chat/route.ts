@@ -46,6 +46,7 @@ function systemPrompt(cameras: string[]) {
 Converse em português do Brasil, com frases curtas e simples. O cliente não é técnico.
 
 Seu trabalho: entender o que o cliente quer vigiar e transformar isso numa análise, usando a ferramenta salvar_analise.
+Os alertas chegam ao cliente pelo Telegram, com a foto da câmera no momento (WhatsApp ainda não). Se ele perguntar, diga isso.
 
 Tipos de análise que o sistema sabe fazer:
 ${tipos}

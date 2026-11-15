@@ -396,25 +396,12 @@ export default function Wizard({
             </div>
             <div className="rounded-2xl border border-line p-5">
               <h2 className="font-semibold">Quem recebe os alertas</h2>
+              <p className="mt-1 text-sm text-muted">Por enquanto os alertas chegam pelo Telegram, com a foto da câmera.</p>
               <label className="mt-3 block">
                 <span className="text-xs font-semibold text-muted">Nome</span>
                 <input
                   value={p.contato_nome}
                   onChange={(e) => setP({ ...p, contato_nome: e.target.value })}
-                  className={input}
-                />
-              </label>
-              <label className="mt-3 block">
-                <span className="text-xs font-semibold text-muted">
-                  WhatsApp (com DDD) · envio pelo WhatsApp em breve
-                </span>
-                <input
-                  value={p.contato_whatsapp}
-                  inputMode="tel"
-                  placeholder="(47) 99999-9999"
-                  onChange={(e) =>
-                    setP({ ...p, contato_whatsapp: e.target.value })
-                  }
                   className={input}
                 />
               </label>

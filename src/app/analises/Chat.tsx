@@ -46,8 +46,10 @@ export default function Chat() {
       .catch(() => {});
   }, []);
 
+  // Rola só a lista de mensagens (dentro da caixa), nunca a página: o chat fica parado no lugar.
   useEffect(() => {
-    endRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+    const el = endRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }, [messages, busy]);
 
   async function send(content: string) {
@@ -87,8 +89,8 @@ export default function Chat() {
 
   return (
     <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_320px]">
-      <section className="flex min-h-[480px] flex-col rounded-2xl border border-line bg-white">
-        <div className="flex-1 space-y-3 overflow-y-auto p-4" aria-live="polite">
+      <section className="flex h-[min(640px,70vh)] min-h-[420px] flex-col rounded-2xl border border-line bg-white">
+        <div ref={endRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-4" aria-live="polite">
           {visiveis.length === 0 && (
             <div className="text-sm text-muted">
               <p>Exemplos do que você pode pedir:</p>
@@ -117,7 +119,6 @@ export default function Chat() {
             </div>
           ))}
           {busy && <p className="text-sm text-muted">A IA está pensando…</p>}
-          <div ref={endRef} />
         </div>
         {error && (
           <p role="alert" className="mx-4 mb-2 rounded-xl bg-crit/10 px-4 py-2 text-sm text-crit">
