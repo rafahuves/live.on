@@ -33,6 +33,7 @@ export function validarPerfil(x: unknown, canais: number[]): Perfil | string {
   const p = x as Record<string, unknown>;
   if (!LOCAIS.some((l) => l.id === p.local)) return "Escolha o tipo de lugar.";
   if (!hhmm(p.inicio) || !hhmm(p.fim)) return "Horário inválido (use HH:MM).";
+  if (p.dia_todo !== undefined && typeof p.dia_todo !== "boolean") return "Opção 24 horas inválida.";
   if (!Array.isArray(p.dias) || !p.dias.every((d) => DIAS.includes(d as (typeof DIAS)[number]))) return "Dias inválidos.";
   if (typeof p.contato_nome !== "string" || typeof p.contato_whatsapp !== "string") return "Contato inválido.";
   const zap = p.contato_whatsapp.replace(/\D/g, "");
@@ -63,17 +64,20 @@ export function analisesDoPerfil(p: Perfil): AnaliseInput[] {
   for (const c of p.cameras) {
     const nomeCam = c.nome.trim() || `Câmera ${c.ch}`;
     for (const tipo of c.tipos) {
-      const texto = sugestoesDa(c, p.local).find((s) => s.tipo === tipo)?.texto ?? tipo;
       const fora = tipo === "pessoa_fora_do_horario";
+      const texto =
+        fora && p.dia_todo ? "Pessoa vista (24 horas)" : (sugestoesDa(c, p.local).find((s) => s.tipo === tipo)?.texto ?? tipo);
+      const janela = fora && !p.dia_todo;
       out.push({
         nome: `${texto} · ${nomeCam}`,
         cameras: [`cam${c.ch}`],
         tipo,
         area: null,
         // Comércio: alerta do fechamento até a abertura. Residência: no período informado.
-        horario_inicio: fora ? (casa ? p.inicio : p.fim) : null,
-        horario_fim: fora ? (casa ? p.fim : p.inicio) : null,
-        dias: fora ? (p.dias as AnaliseInput["dias"]) : [],
+        // 24 horas: sem horário e sem dias = vale sempre.
+        horario_inicio: janela ? (casa ? p.inicio : p.fim) : null,
+        horario_fim: janela ? (casa ? p.fim : p.inicio) : null,
+        dias: janela ? (p.dias as AnaliseInput["dias"]) : [],
         limite: tipo === "contagem_de_pessoas" ? 5 : null,
         periodo: tipo === "passagens_por_area" ? "dia" : null,
         mensagem_alerta: `${texto} — ${nomeCam}`,

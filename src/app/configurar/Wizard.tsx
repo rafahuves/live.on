@@ -2,32 +2,68 @@
 
 import { useState, useTransition } from "react";
 import { DIAS } from "@/lib/analises-tipos";
-import { LOCAIS, MOSTRA, sugestoes, sugestoesDa, type Local, type Mostra, type Perfil, type PerfilCamera, type Sugestao } from "@/lib/perfil-tipos";
+import {
+  LOCAIS,
+  MOSTRA,
+  sugestoes,
+  sugestoesDa,
+  type Local,
+  type Mostra,
+  type Perfil,
+  type PerfilCamera,
+  type Sugestao,
+} from "@/lib/perfil-tipos";
 import { salvarConfiguracao } from "./actions";
 import TelegramBox from "./TelegramBox";
 
-const DIA_LABEL: Record<string, string> = { seg: "Seg", ter: "Ter", qua: "Qua", qui: "Qui", sex: "Sex", sab: "Sáb", dom: "Dom" };
-const input = "mt-1 w-full rounded-xl border border-line px-3 py-2.5 outline-none focus:border-brand";
+const DIA_LABEL: Record<string, string> = {
+  seg: "Seg",
+  ter: "Ter",
+  qua: "Qua",
+  qui: "Qui",
+  sex: "Sex",
+  sab: "Sáb",
+  dom: "Dom",
+};
+const input =
+  "mt-1 w-full rounded-xl border border-line px-3 py-2.5 outline-none focus:border-brand";
 
 function padrao(canais: number[]): Perfil {
   return {
     local: "comercio",
-    cameras: canais.map((ch) => ({ ch, nome: `Câmera ${ch}`, mostra: "outro", tipos: sugestoes("outro", "comercio").map((s) => s.tipo) })),
+    cameras: canais.map((ch) => ({
+      ch,
+      nome: `Câmera ${ch}`,
+      mostra: "outro",
+      tipos: sugestoes("outro", "comercio").map((s) => s.tipo),
+    })),
     inicio: "08:00",
     fim: "18:00",
     dias: ["seg", "ter", "qua", "qui", "sex", "sab"],
+    dia_todo: true, // padrão: avisar 24 horas
     contato_nome: "",
     contato_whatsapp: "",
   };
 }
 
-export default function Wizard({ canais, inicial }: { canais: number[]; inicial: Perfil | null }) {
+export default function Wizard({
+  canais,
+  inicial,
+}: {
+  canais: number[];
+  inicial: Perfil | null;
+}) {
   const [passo, setPasso] = useState(inicial ? 2 : 1);
   const [p, setP] = useState<Perfil>(() => {
     if (!inicial) return padrao(canais);
     // Mantém o que já foi salvo e acrescenta câmeras novas.
     const base = padrao(canais);
-    return { ...inicial, cameras: base.cameras.map((c) => inicial.cameras.find((x) => x.ch === c.ch) ?? c) };
+    return {
+      ...inicial,
+      cameras: base.cameras.map(
+        (c) => inicial.cameras.find((x) => x.ch === c.ch) ?? c,
+      ),
+    };
   });
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, start] = useTransition();
@@ -42,19 +78,32 @@ export default function Wizard({ canais, inicial }: { canais: number[]; inicial:
       ...(x.local !== local && (casa || x.local === "residencia")
         ? casa
           ? { inicio: "23:00", fim: "06:00", dias: [...DIAS] }
-          : { inicio: "08:00", fim: "18:00", dias: ["seg", "ter", "qua", "qui", "sex", "sab"] }
+          : {
+              inicio: "08:00",
+              fim: "18:00",
+              dias: ["seg", "ter", "qua", "qui", "sex", "sab"],
+            }
         : {}),
-      cameras: x.cameras.map((c) => ({ ...c, tipos: sugestoesDa(c, local).map((s) => s.tipo) })),
+      cameras: x.cameras.map((c) => ({
+        ...c,
+        tipos: sugestoesDa(c, local).map((s) => s.tipo),
+      })),
     }));
     setPasso(2);
   }
 
   const setCam = (ch: number, patch: Partial<PerfilCamera>) =>
-    setP((x) => ({ ...x, cameras: x.cameras.map((c) => (c.ch === ch ? { ...c, ...patch } : c)) }));
+    setP((x) => ({
+      ...x,
+      cameras: x.cameras.map((c) => (c.ch === ch ? { ...c, ...patch } : c)),
+    }));
 
   function setMostra(ch: number, mostra: Mostra) {
     const c = p.cameras.find((x) => x.ch === ch);
-    const lista = mostra === "outro" && c?.sugeridas?.length ? c.sugeridas : sugestoes(mostra, p.local);
+    const lista =
+      mostra === "outro" && c?.sugeridas?.length
+        ? c.sugeridas
+        : sugestoes(mostra, p.local);
     setCam(ch, { mostra, tipos: lista.map((s) => s.tipo) });
   }
 
@@ -63,7 +112,11 @@ export default function Wizard({ canais, inicial }: { canais: number[]; inicial:
   const [obs, setObs] = useState<Record<number, string>>({});
   async function sugerir(c: PerfilCamera) {
     const texto = (c.descricao ?? "").trim();
-    if (texto.length < 3) return setObs((o) => ({ ...o, [c.ch]: "Escreva o que a câmera mostra." }));
+    if (texto.length < 3)
+      return setObs((o) => ({
+        ...o,
+        [c.ch]: "Escreva o que a câmera mostra.",
+      }));
     setPensando(c.ch);
     try {
       const r = await fetch("/api/configurar/sugerir", {
@@ -71,19 +124,34 @@ export default function Wizard({ canais, inicial }: { canais: number[]; inicial:
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ texto, local: p.local }),
       });
-      const d = (await r.json()) as { sugestoes?: Sugestao[]; observacao?: string; error?: string };
+      const d = (await r.json()) as {
+        sugestoes?: Sugestao[];
+        observacao?: string;
+        error?: string;
+      };
       if (!r.ok || !d.sugestoes) throw new Error(d.error ?? "Não deu certo.");
-      setCam(c.ch, { sugeridas: d.sugestoes, tipos: d.sugestoes.map((s) => s.tipo) });
+      setCam(c.ch, {
+        sugeridas: d.sugestoes,
+        tipos: d.sugestoes.map((s) => s.tipo),
+      });
       setObs((o) => ({ ...o, [c.ch]: d.observacao ?? "" }));
     } catch (e) {
-      setObs((o) => ({ ...o, [c.ch]: e instanceof Error ? e.message : "Não deu certo. Tente de novo." }));
+      setObs((o) => ({
+        ...o,
+        [c.ch]:
+          e instanceof Error ? e.message : "Não deu certo. Tente de novo.",
+      }));
     } finally {
       setPensando(null);
     }
   }
 
   function toggleTipo(c: PerfilCamera, tipo: PerfilCamera["tipos"][number]) {
-    setCam(c.ch, { tipos: c.tipos.includes(tipo) ? c.tipos.filter((t) => t !== tipo) : [...c.tipos, tipo] });
+    setCam(c.ch, {
+      tipos: c.tipos.includes(tipo)
+        ? c.tipos.filter((t) => t !== tipo)
+        : [...c.tipos, tipo],
+    });
   }
 
   const casa = p.local === "residencia";
@@ -106,8 +174,12 @@ export default function Wizard({ canais, inicial }: { canais: number[]; inicial:
 
       {passo === 1 && (
         <section>
-          <h1 className="font-display text-3xl font-bold tracking-tight">Que tipo de lugar é?</h1>
-          <p className="mt-1 text-muted">Assim o Live.On já sugere o que vale a pena analisar.</p>
+          <h1 className="font-display text-3xl font-bold tracking-tight">
+            Que tipo de lugar é?
+          </h1>
+          <p className="mt-1 text-muted">
+            Assim o Live.On já sugere o que vale a pena analisar.
+          </p>
           <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {LOCAIS.map((l) => (
               <button
@@ -125,11 +197,19 @@ export default function Wizard({ canais, inicial }: { canais: number[]; inicial:
 
       {passo === 2 && (
         <section>
-          <h1 className="font-display text-3xl font-bold tracking-tight">O que cada câmera mostra?</h1>
-          <p className="mt-1 text-muted">Dê um nome e escolha o que aparece na imagem. As análises sugeridas já vêm marcadas.</p>
+          <h1 className="font-display text-3xl font-bold tracking-tight">
+            O que cada câmera mostra?
+          </h1>
+          <p className="mt-1 text-muted">
+            Dê um nome e escolha o que aparece na imagem. As análises sugeridas
+            já vêm marcadas.
+          </p>
           <div className="mt-6 space-y-4">
             {p.cameras.map((c, i) => (
-              <article key={c.ch} className="grid gap-4 rounded-2xl border border-line p-4 md:grid-cols-[240px_1fr]">
+              <article
+                key={c.ch}
+                className="grid gap-4 rounded-2xl border border-line p-4 md:grid-cols-[240px_1fr]"
+              >
                 <div className="flex aspect-video items-center justify-center overflow-hidden rounded-xl bg-black text-xs text-white/50">
                   {i < fotos ? (
                     // eslint-disable-next-line @next/next/no-img-element
@@ -146,8 +226,15 @@ export default function Wizard({ canais, inicial }: { canais: number[]; inicial:
                 </div>
                 <div>
                   <label className="block">
-                    <span className="text-xs font-semibold text-muted">Nome da câmera {c.ch}</span>
-                    <input value={c.nome} maxLength={40} onChange={(e) => setCam(c.ch, { nome: e.target.value })} className={input} />
+                    <span className="text-xs font-semibold text-muted">
+                      Nome da câmera {c.ch}
+                    </span>
+                    <input
+                      value={c.nome}
+                      maxLength={40}
+                      onChange={(e) => setCam(c.ch, { nome: e.target.value })}
+                      className={input}
+                    />
                   </label>
                   <div className="mt-3 flex flex-wrap gap-1.5">
                     {MOSTRA.map((m) => (
@@ -163,13 +250,17 @@ export default function Wizard({ canais, inicial }: { canais: number[]; inicial:
                   {c.mostra === "outro" && (
                     <div className="mt-3">
                       <label className="block">
-                        <span className="text-xs font-semibold text-muted">O que essa câmera mostra e o que você quer saber?</span>
+                        <span className="text-xs font-semibold text-muted">
+                          O que essa câmera mostra e o que você quer saber?
+                        </span>
                         <textarea
                           value={c.descricao ?? ""}
                           maxLength={300}
                           rows={2}
                           placeholder="Ex.: doca de carga do galpão; quero saber se alguém mexe nos pallets à noite"
-                          onChange={(e) => setCam(c.ch, { descricao: e.target.value })}
+                          onChange={(e) =>
+                            setCam(c.ch, { descricao: e.target.value })
+                          }
                           className={input}
                         />
                       </label>
@@ -178,16 +269,27 @@ export default function Wizard({ canais, inicial }: { canais: number[]; inicial:
                         disabled={pensando === c.ch}
                         className="mt-2 rounded-full bg-brand px-4 py-1.5 text-sm font-semibold text-white hover:bg-brand-dark disabled:opacity-60"
                       >
-                        {pensando === c.ch ? "A IA está pensando…" : c.sugeridas?.length ? "Sugerir de novo" : "Ver o que dá para analisar"}
+                        {pensando === c.ch
+                          ? "A IA está pensando…"
+                          : c.sugeridas?.length
+                            ? "Sugerir de novo"
+                            : "Ver o que dá para analisar"}
                       </button>
-                      {obs[c.ch] && <p className="mt-2 text-sm text-muted">{obs[c.ch]}</p>}
+                      {obs[c.ch] && (
+                        <p className="mt-2 text-sm text-muted">{obs[c.ch]}</p>
+                      )}
                     </div>
                   )}
                   <ul className="mt-3 space-y-1.5">
                     {sugestoesDa(c, p.local).map((s) => (
                       <li key={s.tipo}>
                         <label className="flex items-center gap-2 text-sm">
-                          <input type="checkbox" checked={c.tipos.includes(s.tipo)} onChange={() => toggleTipo(c, s.tipo)} className="h-4 w-4 accent-[#7C3AED]" />
+                          <input
+                            type="checkbox"
+                            checked={c.tipos.includes(s.tipo)}
+                            onChange={() => toggleTipo(c, s.tipo)}
+                            className="h-4 w-4 accent-[#7C3AED]"
+                          />
                           {s.texto}
                         </label>
                       </li>
@@ -198,7 +300,10 @@ export default function Wizard({ canais, inicial }: { canais: number[]; inicial:
             ))}
           </div>
           <div className="mt-6 flex justify-end">
-            <button onClick={() => setPasso(3)} className="rounded-full bg-brand px-6 py-3 font-semibold text-white hover:bg-brand-dark">
+            <button
+              onClick={() => setPasso(3)}
+              className="rounded-full bg-brand px-6 py-3 font-semibold text-white hover:bg-brand-dark"
+            >
               Continuar
             </button>
           </div>
@@ -207,48 +312,109 @@ export default function Wizard({ canais, inicial }: { canais: number[]; inicial:
 
       {passo === 3 && (
         <section>
-          <h1 className="font-display text-3xl font-bold tracking-tight">Horário e quem recebe os alertas</h1>
+          <h1 className="font-display text-3xl font-bold tracking-tight">
+            Horário e quem recebe os alertas
+          </h1>
           <div className="mt-6 grid gap-6 md:grid-cols-2">
             <div className="rounded-2xl border border-line p-5">
-              <h2 className="font-semibold">{casa ? "Quando ninguém deve circular?" : "Horário de funcionamento"}</h2>
-              <p className="mt-1 text-sm text-muted">
-                {casa ? "Pessoa vista nesse período gera alerta." : "Pessoa vista fora desse horário gera alerta."}
-              </p>
-              <div className="mt-3 grid grid-cols-2 gap-3">
-                <label>
-                  <span className="text-xs font-semibold text-muted">{casa ? "Das" : "Abre"}</span>
-                  <input type="time" value={p.inicio} onChange={(e) => setP({ ...p, inicio: e.target.value })} className={input} />
-                </label>
-                <label>
-                  <span className="text-xs font-semibold text-muted">{casa ? "Até" : "Fecha"}</span>
-                  <input type="time" value={p.fim} onChange={(e) => setP({ ...p, fim: e.target.value })} className={input} />
-                </label>
-              </div>
+              <h2 className="font-semibold">Quando avisar de pessoa?</h2>
               <div className="mt-3 flex flex-wrap gap-1.5">
-                {DIAS.map((d) => (
+                {[
+                  [true, "24 horas (o tempo todo)"],
+                  [
+                    false,
+                    casa
+                      ? "Só num período"
+                      : "Só fora do horário de funcionamento",
+                  ],
+                ].map(([v, t]) => (
                   <button
-                    key={d}
-                    onClick={() => setP({ ...p, dias: p.dias.includes(d) ? p.dias.filter((x) => x !== d) : [...p.dias, d] })}
-                    className={`rounded-full border px-3 py-1 text-sm ${p.dias.includes(d) ? "border-brand bg-brand text-white" : "border-line"}`}
+                    key={String(v)}
+                    onClick={() => setP({ ...p, dia_todo: v as boolean })}
+                    className={`rounded-full border px-3 py-1 text-sm ${!!p.dia_todo === v ? "border-brand bg-brand text-white" : "border-line"}`}
                   >
-                    {DIA_LABEL[d]}
+                    {t as string}
                   </button>
                 ))}
               </div>
+              {p.dia_todo ? (
+                <p className="mt-3 text-sm text-muted">
+                  Qualquer pessoa vista, a qualquer hora e em qualquer dia, gera
+                  alerta.
+                </p>
+              ) : (
+                <>
+                  <p className="mt-3 text-sm text-muted">
+                    {casa
+                      ? "Pessoa vista nesse período gera alerta."
+                      : "Pessoa vista fora desse horário gera alerta."}
+                  </p>
+                  <div className="mt-3 grid grid-cols-2 gap-3">
+                    <label>
+                      <span className="text-xs font-semibold text-muted">
+                        {casa ? "Das" : "Abre"}
+                      </span>
+                      <input
+                        type="time"
+                        value={p.inicio}
+                        onChange={(e) => setP({ ...p, inicio: e.target.value })}
+                        className={input}
+                      />
+                    </label>
+                    <label>
+                      <span className="text-xs font-semibold text-muted">
+                        {casa ? "Até" : "Fecha"}
+                      </span>
+                      <input
+                        type="time"
+                        value={p.fim}
+                        onChange={(e) => setP({ ...p, fim: e.target.value })}
+                        className={input}
+                      />
+                    </label>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {DIAS.map((d) => (
+                      <button
+                        key={d}
+                        onClick={() =>
+                          setP({
+                            ...p,
+                            dias: p.dias.includes(d)
+                              ? p.dias.filter((x) => x !== d)
+                              : [...p.dias, d],
+                          })
+                        }
+                        className={`rounded-full border px-3 py-1 text-sm ${p.dias.includes(d) ? "border-brand bg-brand text-white" : "border-line"}`}
+                      >
+                        {DIA_LABEL[d]}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
             <div className="rounded-2xl border border-line p-5">
               <h2 className="font-semibold">Quem recebe os alertas</h2>
               <label className="mt-3 block">
                 <span className="text-xs font-semibold text-muted">Nome</span>
-                <input value={p.contato_nome} onChange={(e) => setP({ ...p, contato_nome: e.target.value })} className={input} />
+                <input
+                  value={p.contato_nome}
+                  onChange={(e) => setP({ ...p, contato_nome: e.target.value })}
+                  className={input}
+                />
               </label>
               <label className="mt-3 block">
-                <span className="text-xs font-semibold text-muted">WhatsApp (com DDD) · envio pelo WhatsApp em breve</span>
+                <span className="text-xs font-semibold text-muted">
+                  WhatsApp (com DDD) · envio pelo WhatsApp em breve
+                </span>
                 <input
                   value={p.contato_whatsapp}
                   inputMode="tel"
                   placeholder="(47) 99999-9999"
-                  onChange={(e) => setP({ ...p, contato_whatsapp: e.target.value })}
+                  onChange={(e) =>
+                    setP({ ...p, contato_whatsapp: e.target.value })
+                  }
                   className={input}
                 />
               </label>
@@ -257,11 +423,17 @@ export default function Wizard({ canais, inicial }: { canais: number[]; inicial:
           </div>
 
           <div className="mt-6 rounded-2xl bg-soft p-5 text-sm">
-            <b>Resumo:</b> {LOCAIS.find((l) => l.id === p.local)?.label} · {p.cameras.filter((c) => c.tipos.length).length} câmeras ·{" "}
-            {total} análises ativas. Sem reconhecimento facial: o Live.On vê pessoas, não identifica quem é. Lembre de manter o aviso de
-            &quot;ambiente monitorado&quot; no local.
+            <b>Resumo:</b> {LOCAIS.find((l) => l.id === p.local)?.label} ·{" "}
+            {p.cameras.filter((c) => c.tipos.length).length} câmeras · {total}{" "}
+            análises ativas. Sem reconhecimento facial: o Live.On vê pessoas,
+            não identifica quem é. Lembre de manter o aviso de &quot;ambiente
+            monitorado&quot; no local.
           </div>
-          {erro && <p className="mt-4 rounded-xl bg-crit/10 px-4 py-3 text-sm text-crit">{erro}</p>}
+          {erro && (
+            <p className="mt-4 rounded-xl bg-crit/10 px-4 py-3 text-sm text-crit">
+              {erro}
+            </p>
+          )}
           <div className="mt-6 flex justify-end">
             <button
               disabled={salvando}

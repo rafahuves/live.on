@@ -87,6 +87,7 @@ export type Perfil = {
   // Comércio etc.: horário de funcionamento (alerta fora dele). Residência: período em que ninguém deve circular.
   inicio: string;
   fim: string;
+  dia_todo?: boolean; // 24 horas: avisa de pessoa a qualquer hora, todos os dias (ignora início/fim/dias)
   dias: string[];
   contato_nome: string;
   contato_whatsapp: string;
