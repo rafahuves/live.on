@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { DIAS } from "@/lib/analises-tipos";
 import { LOCAIS, MOSTRA, sugestoes, sugestoesDa, type Local, type Mostra, type Perfil, type PerfilCamera, type Sugestao } from "@/lib/perfil-tipos";
 import { salvarConfiguracao } from "./actions";
+import TelegramBox from "./TelegramBox";
 
 const DIA_LABEL: Record<string, string> = { seg: "Seg", ter: "Ter", qua: "Qua", qui: "Qui", sex: "Sex", sab: "Sáb", dom: "Dom" };
 const input = "mt-1 w-full rounded-xl border border-line px-3 py-2.5 outline-none focus:border-brand";
@@ -242,7 +243,7 @@ export default function Wizard({ canais, inicial }: { canais: number[]; inicial:
                 <input value={p.contato_nome} onChange={(e) => setP({ ...p, contato_nome: e.target.value })} className={input} />
               </label>
               <label className="mt-3 block">
-                <span className="text-xs font-semibold text-muted">WhatsApp (com DDD)</span>
+                <span className="text-xs font-semibold text-muted">WhatsApp (com DDD) · envio pelo WhatsApp em breve</span>
                 <input
                   value={p.contato_whatsapp}
                   inputMode="tel"
@@ -251,6 +252,7 @@ export default function Wizard({ canais, inicial }: { canais: number[]; inicial:
                   className={input}
                 />
               </label>
+              <TelegramBox ch={p.cameras.find((c) => c.tipos.length)?.ch} />
             </div>
           </div>
 
