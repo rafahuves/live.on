@@ -21,10 +21,10 @@ export async function connectDvr(_prev: ConnectState, form: FormData): Promise<C
   if (!/^[a-z0-9.-]+$/i.test(dvr.host)) return { error: "Endereço do gravador inválido (ex.: 192.168.1.108)." };
   if (!Number.isInteger(dvr.port) || dvr.port < 1 || dvr.port > 65535) return { error: "Porta inválida." };
   if (!Number.isInteger(dvr.channels) || dvr.channels < 1 || dvr.channels > 64) return { error: "Número de câmeras inválido." };
-  if (!dvr.user || !dvr.pass) return { error: "Preencha o usuário e a senha da Intelbras." };
+  if (!dvr.user || !dvr.pass) return { error: "Preencha o usuário e a senha do gravador." };
 
   if (!(await testDvr(dvr))) {
-    return { error: "Não consegui ver a câmera 1. Confira o endereço, o usuário e a senha da Intelbras." };
+    return { error: "Não consegui ver a câmera 1. Confira o endereço, o usuário e a senha do gravador." };
   }
   await saveDvr(user.id, dvr);
   revalidatePath("/cameras");

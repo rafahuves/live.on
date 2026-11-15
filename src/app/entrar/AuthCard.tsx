@@ -17,7 +17,7 @@ export default function AuthCard({ mode }: { mode: "entrar" | "criar" }) {
         </Link>
         <h1 className="mt-6 font-display text-2xl font-bold tracking-tight">{entrar ? "Entrar" : "Criar conta"}</h1>
         <p className="mt-1 text-sm text-muted">
-          {entrar ? "Acesse as suas câmeras." : "Teste grátis. Depois você conecta o seu gravador Intelbras."}
+          {entrar ? "Acesse as suas câmeras." : "Teste grátis. Depois você conecta o seu gravador (compatível com Intelbras)."}
         </p>
         {!supabaseConfigured() && (
           <p role="alert" className="mt-6 rounded-xl bg-warn/10 px-4 py-3 text-sm text-warn">

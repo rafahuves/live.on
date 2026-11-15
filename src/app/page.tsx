@@ -52,7 +52,7 @@ const PRICE_ITEMS = [
 const FAQ = [
   {
     q: "Preciso trocar minhas câmeras?",
-    a: "Não. A Live.On funciona com as câmeras e o gravador que você já tem, de marcas como Intelbras, Hikvision e Dahua.",
+    a: "Não. A Live.On funciona com as câmeras e o gravador que você já tem. É compatível com gravadores e câmeras Intelbras, Hikvision e Dahua.",
   },
   {
     q: "Preciso de um técnico ou mexer no roteador?",
@@ -119,6 +119,9 @@ export default function Home() {
               Ver demonstração
             </a>
           </div>
+          <p className="mt-6 text-sm text-muted">
+            <span className="font-semibold text-foreground">Compatível com</span> Intelbras · Hikvision · Dahua
+          </p>
           <dl className="mt-12 grid max-w-3xl grid-cols-1 gap-3 sm:grid-cols-3">
             {[
               ["0", "câmeras para trocar"],

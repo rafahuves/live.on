@@ -19,9 +19,9 @@ export default function ConnectDvr() {
 
   return (
     <div className="max-w-lg rounded-2xl border border-line bg-white p-6">
-      <h2 className="text-lg font-semibold">Conectar o seu gravador Intelbras</h2>
+      <h2 className="text-lg font-semibold">Conectar o seu gravador</h2>
       <p className="mt-1 text-sm text-muted">
-        Use o mesmo usuário e senha que você usa no app da Intelbras ou no próprio gravador. A senha fica guardada só
+        Compatível com gravadores Intelbras. Use o mesmo usuário e senha que você usa no app do gravador ou no próprio aparelho. A senha fica guardada só
         neste computador, criptografada.
       </p>
       <form action={action} className="mt-5 space-y-4">
@@ -53,11 +53,11 @@ export default function ConnectDvr() {
         </div>
         <div className="grid grid-cols-2 gap-3">
           <label className="block">
-            <span className="text-sm font-medium">Usuário Intelbras</span>
+            <span className="text-sm font-medium">Usuário do gravador</span>
             <input name="user" autoComplete="off" defaultValue="admin" required className={field} />
           </label>
           <label className="block">
-            <span className="text-sm font-medium">Senha Intelbras</span>
+            <span className="text-sm font-medium">Senha do gravador</span>
             <input name="pass" type="password" autoComplete="off" required className={field} />
           </label>
         </div>
