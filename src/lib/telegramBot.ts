@@ -6,7 +6,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { conversar, iaConfigurada, textoDe, type Msg } from "./assistente";
-import { ferramentasTelegram, fotoCamera, relatorio, salvarAnalise } from "./ferramentas";
+import { ferramentasTelegram, fotoCamera, gerenciarAnalises, relatorio, salvarAnalise } from "./ferramentas";
 import { empresaDaConta } from "./perfil";
 import { systemPrompt } from "./prompt";
 import { listAnalises } from "./analises";
@@ -129,6 +129,7 @@ async function tratar(m: NonNullable<Update["message"]>) {
       fotoCamera(userId, (jpg, legenda) => sendPhoto(chatId, jpg, legenda)),
       ...ferramentasTelegram(userId, primeiroNome, null, "telegram"),
       relatorio(userId),
+      ...gerenciarAnalises(userId),
     ]);
     const resposta = textoDe(out[out.length - 1]) || "Feito ✅";
     await sendText(chatId, resposta);

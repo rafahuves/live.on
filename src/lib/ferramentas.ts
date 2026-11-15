@@ -1,5 +1,5 @@
 // Ferramentas do assistente (site e Telegram). Ver src/lib/assistente.ts.
-import { DIAS, TIPOS, addAnalise, validarAnalise, type Analise } from "./analises";
+import { DIAS, TIPOS, TIPO_LABEL, addAnalise, listAnalises, removeAnalises, updateAnalise, validarAnalise, type Analise, type AnaliseInput } from "./analises";
 import { activeChannels, loadDvr } from "./dvr";
 import { fotoDaCamera } from "./fotos";
 import type { Ferramenta } from "./assistente";
@@ -175,4 +175,92 @@ export function relatorio(userId: string): Ferramenta {
         " (Passagem = alguém aparece na câmera depois de a imagem ficar vazia.)";
     },
   };
+}
+
+/** Gerenciar as análises (listar, editar, ligar/desligar, apagar). O robô do Telegram tem autonomia total. */
+export function gerenciarAnalises(userId: string): Ferramenta[] {
+  const opc = (t: string, d: string) => ({ type: [t, "null"], description: d });
+  return [
+    {
+      name: "listar_analises",
+      description: "Lista TODAS as análises da conta com id, câmeras, tipo, horário, limite e se está ligada. Use antes de editar ou apagar.",
+      schema: { type: "object", additionalProperties: false, properties: {}, required: [] },
+      async run() {
+        const lista = await listAnalises(userId);
+        if (!lista.length) return "Nenhuma análise.";
+        return lista
+          .map((a) =>
+            [
+              `id=${a.id}`,
+              a.ativa ? "LIGADA" : "DESLIGADA",
+              `"${a.nome}"`,
+              TIPO_LABEL[a.tipo],
+              a.cameras.length ? a.cameras.join(",") : "todas as câmeras",
+              a.area ? `área: ${a.area}` : "",
+              a.horario_inicio && a.horario_fim ? `${a.horario_inicio}-${a.horario_fim}` : "o dia todo",
+              a.dias.length ? a.dias.join(",") : "todos os dias",
+              a.limite ? `limite ${a.limite}${a.periodo ? "/" + a.periodo : ""}` : "",
+              `alerta: "${a.mensagem_alerta}"`,
+            ]
+              .filter(Boolean)
+              .join(" | "),
+          )
+          .join("\n");
+      },
+    },
+    {
+      name: "editar_analise",
+      description:
+        "Muda uma análise existente. Em cada campo: null = não mexer. Para voltar ao 'dia todo' mande horario_inicio e horario_fim como \"\"; para a imagem toda, area \"\"; para tirar o limite, limite 0. ativa=false desliga sem apagar.",
+      schema: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "nome", "cameras", "tipo", "area", "horario_inicio", "horario_fim", "dias", "limite", "periodo", "mensagem_alerta", "ativa"],
+        properties: {
+          id: { type: "string", description: "id da análise (veja listar_analises)" },
+          nome: opc("string", "novo nome"),
+          cameras: { type: ["array", "null"], items: { type: "string" }, description: "ex.: ['cam13']; [] = todas" },
+          tipo: { type: ["string", "null"], enum: [...TIPOS, null] },
+          area: opc("string", "porta ou área; \"\" = imagem toda"),
+          horario_inicio: opc("string", "HH:MM; \"\" = dia todo"),
+          horario_fim: opc("string", "HH:MM; \"\" = dia todo"),
+          dias: { type: ["array", "null"], items: { type: "string", enum: [...DIAS] }, description: "[] = todos os dias" },
+          limite: opc("integer", "quantidade que dispara; 0 = sem limite"),
+          periodo: { type: ["string", "null"], enum: ["hora", "dia", null] },
+          mensagem_alerta: opc("string", "texto do alerta"),
+          ativa: opc("boolean", "true liga, false desliga"),
+        },
+      },
+      async run(args) {
+        const patch: Partial<AnaliseInput> & { ativa?: boolean } = {};
+        for (const k of ["nome", "cameras", "tipo", "dias", "periodo", "mensagem_alerta", "ativa"] as const) {
+          if (args[k] !== null && args[k] !== undefined) (patch as Record<string, unknown>)[k] = args[k];
+        }
+        for (const k of ["area", "horario_inicio", "horario_fim"] as const) {
+          if (args[k] !== null && args[k] !== undefined) patch[k] = args[k] === "" ? null : String(args[k]);
+        }
+        if (args.limite !== null && args.limite !== undefined) {
+          patch.limite = Number(args.limite) > 0 ? Number(args.limite) : null;
+          if (!patch.limite) patch.periodo = null;
+        }
+        const r = await updateAnalise(userId, String(args.id ?? ""), patch);
+        return typeof r === "string" ? `Não mudei: ${r}.` : `Análise "${r.nome}" atualizada (${r.ativa ? "ligada" : "desligada"}).`;
+      },
+    },
+    {
+      name: "apagar_analises",
+      description: "Apaga de vez uma ou mais análises (ex.: as repetidas). Para só pausar, prefira editar_analise com ativa=false.",
+      schema: {
+        type: "object",
+        additionalProperties: false,
+        required: ["ids"],
+        properties: { ids: { type: "array", items: { type: "string" }, description: "ids das análises a apagar" } },
+      },
+      async run(args) {
+        const ids = Array.isArray(args.ids) ? args.ids.map(String) : [];
+        const n = await removeAnalises(userId, ids);
+        return n ? `Apaguei ${n} análise${n > 1 ? "s" : ""}.` : "Nenhuma análise encontrada com esses ids.";
+      },
+    },
+  ];
 }

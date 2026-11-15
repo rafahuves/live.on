@@ -39,6 +39,28 @@ export async function replaceConfigAnalises(userId: string, inputs: AnaliseInput
   await saveAll(userId, [...keep, ...novas]);
 }
 
+/** Edita uma análise (os campos que vierem). Devolve a análise nova, ou um texto de erro. */
+export async function updateAnalise(userId: string, id: string, patch: Partial<AnaliseInput> & { ativa?: boolean }): Promise<Analise | string> {
+  const list = await listAnalises(userId);
+  const i = list.findIndex((a) => a.id === id);
+  if (i < 0) return "análise não encontrada";
+  const { ativa, ...campos } = patch;
+  const junta = { ...list[i], ...campos };
+  const valido = validarAnalise(junta);
+  if (typeof valido === "string") return valido;
+  list[i] = { ...list[i], ...valido, ...(ativa === undefined ? {} : { ativa }) };
+  await saveAll(userId, list);
+  return list[i];
+}
+
+/** Apaga várias análises de uma vez. Devolve quantas apagou. */
+export async function removeAnalises(userId: string, ids: string[]): Promise<number> {
+  const list = await listAnalises(userId);
+  const next = list.filter((a) => !ids.includes(a.id));
+  if (next.length !== list.length) await saveAll(userId, next);
+  return list.length - next.length;
+}
+
 export async function removeAnalise(userId: string, id: string): Promise<boolean> {
   const list = await listAnalises(userId);
   const next = list.filter((a) => a.id !== id);
