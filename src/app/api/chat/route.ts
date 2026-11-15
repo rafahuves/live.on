@@ -6,6 +6,8 @@ import { DIAS, TIPOS, TIPO_LABEL, addAnalise, listAnalises, validarAnalise } fro
 import { getCurrentUser } from "@/lib/supabase/server";
 import { activeChannels, loadDvr } from "@/lib/dvr";
 import { loadPerfil } from "@/lib/perfil";
+import { geminiConfigured } from "@/lib/gemini";
+import { chatGemini } from "@/lib/chatGemini";
 
 const client = new Anthropic();
 const MODEL = "claude-opus-5-5";
@@ -77,13 +79,20 @@ async function cameraNames(userId: string): Promise<string[]> {
 export async function POST(request: Request) {
   const user = await getCurrentUser();
   if (!user) return Response.json({ error: "Faça login de novo." }, { status: 401 });
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return Response.json({ error: "Falta ANTHROPIC_API_KEY no .env.local." }, { status: 500 });
+  if (!process.env.ANTHROPIC_API_KEY && !geminiConfigured()) {
+    return Response.json({ error: "Falta ANTHROPIC_API_KEY (ou GEMINI_API_KEY, para testes) no .env.local." }, { status: 500 });
   }
   const body = (await request.json()) as { messages?: Anthropic.Beta.BetaMessageParam[] };
   const messages = Array.isArray(body.messages) ? [...body.messages] : [];
   if (!messages.length || messages[0].role !== "user") {
     return Response.json({ error: "Histórico inválido." }, { status: 400 });
+  }
+
+  // Fase de testes sem chave da Claude: Gemini (plano grátis). Ver src/lib/chatGemini.ts.
+  if (!process.env.ANTHROPIC_API_KEY) {
+    const out = await chatGemini(user.id, systemPrompt(await cameraNames(user.id)), messages);
+    if (!out) return Response.json({ error: "A IA (Gemini) está ocupada agora. Tente de novo em instantes." }, { status: 503 });
+    return Response.json({ messages: out.messages, saved: out.saved, analises: await listAnalises(user.id) });
   }
 
   const system = systemPrompt(await cameraNames(user.id));

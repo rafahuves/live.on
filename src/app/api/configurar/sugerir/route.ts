@@ -6,6 +6,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getCurrentUser } from "@/lib/supabase/server";
 import { TIPOS, TIPO_LABEL } from "@/lib/analises-tipos";
 import { LOCAIS, sugestoesPorTexto, type Local, type Sugestao } from "@/lib/perfil-tipos";
+import { geminiGenerate } from "@/lib/gemini";
 
 const MODEL = "claude-opus-5-5";
 
@@ -80,53 +81,33 @@ export async function POST(request: Request) {
   }
 }
 
-// Gemini (Google AI Studio, plano grátis) — SÓ para a fase de testes. No plano grátis o Google pode usar o que é
-// enviado para treinar os modelos dele: não usar com dados de clientes reais. Devolve null se falhar.
+// Gemini (plano grátis, só para testes): ver src/lib/gemini.ts.
 async function gemini(texto: string, local: string): Promise<{ sugestoes: Sugestao[]; observacao: string } | null> {
-  // Plano grátis às vezes fica sobrecarregado (503): tenta o segundo modelo antes de desistir.
-  for (const model of [process.env.GEMINI_MODEL || "gemini-3.5-flash", "gemini-flash-lite-latest"]) {
-    const out = await geminiModelo(model, texto, local);
-    if (out) return out;
-  }
-  return null;
-}
-
-async function geminiModelo(model: string, texto: string, local: string) {
-  try {
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY ?? "" },
-      signal: AbortSignal.timeout(15_000),
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: system(local) }] },
-        contents: [{ role: "user", parts: [{ text: texto }] }],
-        generationConfig: {
-          temperature: 0.2,
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: "OBJECT",
-            required: ["sugestoes", "observacao"],
-            properties: {
-              sugestoes: {
-                type: "ARRAY",
-                items: {
-                  type: "OBJECT",
-                  required: ["tipo", "texto"],
-                  properties: { tipo: { type: "STRING", enum: [...TIPOS] }, texto: { type: "STRING" } },
-                },
-              },
-              observacao: { type: "STRING" },
+  const parts = await geminiGenerate({
+    systemInstruction: { parts: [{ text: system(local) }] },
+    contents: [{ role: "user", parts: [{ text: texto }] }],
+    generationConfig: {
+      temperature: 0.2,
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: "OBJECT",
+        required: ["sugestoes", "observacao"],
+        properties: {
+          sugestoes: {
+            type: "ARRAY",
+            items: {
+              type: "OBJECT",
+              required: ["tipo", "texto"],
+              properties: { tipo: { type: "STRING", enum: [...TIPOS] }, texto: { type: "STRING" } },
             },
           },
+          observacao: { type: "STRING" },
         },
-      }),
-    });
-    if (!res.ok) {
-      console.warn(`[sugerir] Gemini ${model} respondeu ${res.status}.`);
-      return null;
-    }
-    const data = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
-    const out = data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("");
+      },
+    },
+  });
+  try {
+    const out = parts?.map((p) => p.text ?? "").join("");
     return out ? (JSON.parse(out) as { sugestoes: Sugestao[]; observacao: string }) : null;
   } catch {
     return null;
