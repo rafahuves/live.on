@@ -6,7 +6,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { conversar, iaConfigurada, textoDe, type Msg } from "./assistente";
-import { ferramentasTelegram, fotoCamera, salvarAnalise } from "./ferramentas";
+import { ferramentasTelegram, fotoCamera, relatorio, salvarAnalise } from "./ferramentas";
 import { empresaDaConta } from "./perfil";
 import { systemPrompt } from "./prompt";
 import { listAnalises } from "./analises";
@@ -85,7 +85,7 @@ Quando algo importante acontecer, eu te aviso aqui na hora, com o print da câme
 • "me avise se alguém entrar no estoque depois das 22h"
 
 📊 <b>Relatórios</b>
-Contagens e resumos do dia estão chegando em breve.
+Pergunte, por exemplo: "quantas pessoas passaram hoje na escada?"
 
 Pode começar: me manda uma mensagem! 🚀`;
   await sendText(chatId, texto, true);
@@ -128,6 +128,7 @@ async function tratar(m: NonNullable<Update["message"]>) {
       salvarAnalise(userId, async (id) => `Análise salva com id ${id}. Os alertas vão chegar aqui no Telegram, com foto.`),
       fotoCamera(userId, (jpg, legenda) => sendPhoto(chatId, jpg, legenda)),
       ...ferramentasTelegram(userId, primeiroNome, null, "telegram"),
+      relatorio(userId),
     ]);
     const resposta = textoDe(out[out.length - 1]) || "Feito ✅";
     await sendText(chatId, resposta);

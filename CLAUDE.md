@@ -63,6 +63,17 @@ quando algo importante acontece (ex.: pessoa fora do horário, câmera tampada).
   10 imagens/s (`ffmpeg.mjpeg` em `scripts/cameras.mjs`). Teste de 2026-11-15 no DVR de casa: 11 câmeras abertas,
   gravador respondendo em ~20 ms, CPU ~60% de 1 núcleo.
   A análise em Python (futura) também deve ler do go2rtc, nunca do gravador.
+- **Detector (`scripts/detector.py`, Python 3.12 em `.venv-detector`, YOLO `models/yolo11n.pt`, CPU — MPS trava no
+  macOS 14):** lê o `_mjpeg` de cada câmera que tem análise pelo go2rtc (1 conexão contínua, abre 1 a cada 1,5 s,
+  backoff 30 s→5 min), aplica as análises (horário/24h, contagem, permanência, passagens, tampada/sem sinal) e manda
+  alerta com print (pessoa marcada) via `POST /api/interno/alerta` (só 127.0.0.1 + `LIVEON_LOCAL_KEY`) → Telegram.
+  1 alerta/5 min por análise e câmera. Eventos em `data/eventos/<id>.jsonl` (ferramenta `relatorio`). Só 1 detector
+  por vez (lock). O escudo e as câmeras sobem no início do servidor (`src/instrumentation.ts`).
+- **Assistente único (`src/lib/assistente.ts`)**: Claude (ANTHROPIC_API_KEY) ou Gemini grátis (GEMINI_API_KEY, testes),
+  com ferramentas em `src/lib/ferramentas.ts` (salvar_analise, foto_camera, relatorio, situacao_telegram, alerta_teste,
+  nome_da_empresa) e instruções em `src/lib/prompt.ts`. Usado pelo chat do site e pelo robô do Telegram
+  (`src/lib/telegramBot.ts`, long polling; `/start <código>` liga a conta e manda boas-vindas; foto de perfil
+  `assets/robo-telegram.jpg`). Fase de teste: 1 robô = 1 empresa ("Live.On - <empresa>").
 - **Análises personalizadas** (`/analises`): chat com a Claude (`claude-opus-5-5`, effort low, `fallbacks: "default"`) em
   `src/app/api/chat/route.ts`; a ferramenta `salvar_analise` (strict) grava em `data/analises/<id da conta>.json` (local, fora do Git).
   O cliente guarda o histórico completo e só acrescenta (não editar mensagens antigas: quebra os blocos de thinking).

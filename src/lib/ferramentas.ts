@@ -4,6 +4,8 @@ import { activeChannels, loadDvr } from "./dvr";
 import { fotoDaCamera } from "./fotos";
 import type { Ferramenta } from "./assistente";
 import { alertaDeTeste } from "./alertaTeste";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { empresaDaConta, salvarEmpresa } from "./perfil";
 import { ajustarNomeDoRobo, nomeDoRobo, registrarCodigo, telegramStatus, telegramTexto } from "./telegram";
 
@@ -114,4 +116,63 @@ export function ferramentasTelegram(userId: string, cliente: string | null, doCa
     });
   }
   return lista;
+}
+
+/** Relatório a partir dos eventos do detector (data/eventos/<id>.jsonl): passagens e alertas por câmera. */
+export function relatorio(userId: string): Ferramenta {
+  return {
+    name: "relatorio",
+    description:
+      "Relatório real do detector: quantas passagens de pessoas e quantos alertas houve, por câmera, num período. Use para perguntas como 'quantas pessoas passaram hoje na escada'.",
+    schema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["periodo", "camera"],
+      properties: {
+        periodo: { type: "string", enum: ["hoje", "ontem", "7dias"] },
+        camera: { type: ["string", "null"], description: "Código da câmera (ex.: 'cam13') ou null para todas" },
+      },
+    },
+    async run(args) {
+      let linhas: string[] = [];
+      try {
+        linhas = (await readFile(path.join(process.cwd(), "data", "eventos", `${userId}.jsonl`), "utf8")).trim().split("\n");
+      } catch {
+        return "Ainda não há nenhum evento: o detector ainda não registrou passagens nesta conta.";
+      }
+      const fmt = (d: Date) => d.toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" }); // AAAA-MM-DD
+      const hoje = new Date();
+      const ontem = new Date(hoje.getTime() - 86_400_000);
+      const desde = new Date(hoje.getTime() - 7 * 86_400_000);
+      const noPeriodo = (ts: string) => {
+        const dia = ts.slice(0, 10);
+        if (args.periodo === "hoje") return dia === fmt(hoje);
+        if (args.periodo === "ontem") return dia === fmt(ontem);
+        return dia >= fmt(desde);
+      };
+      const cam = args.camera ? `cam${String(args.camera).replace(/\D/g, "")}` : null;
+      const porCam: Record<string, { passagens: number; alertas: number; horas: Record<string, number> }> = {};
+      let primeiro = "";
+      for (const l of linhas) {
+        try {
+          const e = JSON.parse(l) as { ts: string; cam: string; tipo: string };
+          primeiro ||= e.ts;
+          if (!noPeriodo(e.ts) || (cam && e.cam !== cam)) continue;
+          const c = (porCam[e.cam] ??= { passagens: 0, alertas: 0, horas: {} });
+          if (e.tipo === "passagem") {
+            c.passagens++;
+            const h = e.ts.slice(11, 13) + "h";
+            c.horas[h] = (c.horas[h] ?? 0) + 1;
+          } else if (e.tipo === "alerta") c.alertas++;
+        } catch {}
+      }
+      const partes = Object.entries(porCam).map(([c, v]) => {
+        const pico = Object.entries(v.horas).sort((a, b) => b[1] - a[1])[0];
+        return `${c}: ${v.passagens} passagens${pico ? ` (mais movimento às ${pico[0]})` : ""}, ${v.alertas} alertas`;
+      });
+      const inicio = primeiro ? ` O detector começou a contar em ${primeiro.slice(0, 16).replace("T", " às ")}.` : "";
+      return (partes.length ? `Período ${args.periodo}: ${partes.join("; ")}.` : `Nenhuma passagem registrada no período ${args.periodo}.`) + inicio +
+        " (Passagem = alguém aparece na câmera depois de a imagem ficar vazia.)";
+    },
+  };
 }

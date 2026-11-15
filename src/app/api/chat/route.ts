@@ -6,7 +6,7 @@ import { getCurrentUser } from "@/lib/supabase/server";
 import { listAnalises, type Analise } from "@/lib/analises";
 import { empresaDaConta } from "@/lib/perfil";
 import { conversar, iaConfigurada, type Msg } from "@/lib/assistente";
-import { ferramentasTelegram, salvarAnalise } from "@/lib/ferramentas";
+import { ferramentasTelegram, relatorio, salvarAnalise } from "@/lib/ferramentas";
 import { systemPrompt } from "@/lib/prompt";
 import { telegramStatus, telegramTexto } from "@/lib/telegram";
 
@@ -34,6 +34,7 @@ export async function POST(request: Request) {
     const messages = await conversar(system, history, [
       salvarAnalise(user.id, aposSalvar, (a) => saved.push(a)),
       ...ferramentasTelegram(user.id, user.name, user.company, "site"),
+      relatorio(user.id),
     ]);
     return Response.json({ messages, saved, analises: await listAnalises(user.id) });
   } catch (e) {

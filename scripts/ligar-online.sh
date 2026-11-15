@@ -48,6 +48,15 @@ for i in $(seq 1 60); do
 done
 echo "[ok] Site ligado em http://localhost:3001"
 
+# 3b) Detector (YOLO): olha as câmeras pelo go2rtc e manda os alertas no Telegram.
+if [ -x .venv-detector/bin/python ]; then
+  ( while true; do .venv-detector/bin/python scripts/detector.py >>"$LOG/detector.log" 2>&1; sleep 10; done ) &
+  PIDS+=($!)
+  echo "[ok] Detector ligado (log em $LOG/detector.log)."
+else
+  echo "[!!] Detector não instalado (.venv-detector). Os alertas automáticos ficam desligados."
+fi
+
 # 4) Túnel público
 : >"$LOG/tunel.log"
 cloudflared tunnel --no-autoupdate --url http://localhost:3001 >>"$LOG/tunel.log" 2>&1 &

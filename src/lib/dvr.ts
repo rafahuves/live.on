@@ -1,7 +1,7 @@
 // Gravador (DVR/NVR) de cada conta. A senha fica SÓ neste computador (o da mesma rede das câmeras),
 // criptografada com AES-256-GCM (chave LIVEON_LOCAL_KEY no .env.local). Nunca vai para o Supabase.
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { ensureShield, shieldPort } from "./dvrShield";
 
@@ -169,5 +169,18 @@ export async function discoverDvrs(): Promise<string[]> {
     return [...ips];
   } catch {
     return [];
+  }
+}
+
+/** Liga o escudo de todos os gravadores salvos neste computador (no início do servidor), para o detector e o
+ *  conversor funcionarem mesmo sem ninguém abrir o site. */
+export async function ligarEscudos() {
+  const arquivos = await readdir(DIR).catch(() => [] as string[]);
+  for (const f of arquivos) {
+    const uid = f.replace(/\.json$/, "");
+    const dvr = await loadDvr(uid).catch(() => null);
+    if (!dvr) continue;
+    await ensureShield(dvr.host, dvr.port, dvr.channels).catch((e) => console.warn("[escudo do gravador] não ligou:", e));
+    if (await go2rtcOnline()) await ensureStreams(uid, dvr).catch(() => {});
   }
 }
