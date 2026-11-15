@@ -26,6 +26,8 @@ porta da câmara fria aberta, posto de trabalho vazio, etc.
 - Site principal `/` = **Central de Simulações** (`public/simulacoes.html`), HTML único,
   cópia fiel do artifact claude.ai/artifact/2SfWBDAyu9W8qCLCMNefwB, servido via rewrite em `next.config.ts`.
   Vídeos são simulados em canvas; dados fictícios.
+- Faixa roxa **fixa no topo** (`.ipbar` em `simulacoes.html`) mostra "IP do Usuário: …", vindo da
+  rota `src/app/api/ip/route.ts` (cabeçalho x-forwarded-for/x-real-ip). Pedido do usuário: não pode sair da tela.
 - Identidade visual: branco + roxo `#7C3AED`, fontes Inter / Inter Tight / IBM Plex Mono.
 - Removido em 2026-11-14: protótipo `/camera` (webcam + TensorFlow.js). Não recriar sem pedido.
 
@@ -33,6 +35,10 @@ porta da câmara fria aberta, posto de trabalho vazio, etc.
 - Roteiro completo em `docs/PLANO.md` (fases, arquitetura, decisões). Ler antes de começar trabalho novo.
 - Arquitetura alvo: câmeras Intelbras → RTSP → caixinha no cliente (Python + YOLO + regras)
   → Supabase → alerta no celular (Telegram/ntfy) + painel no site Next.js.
+- **Requisito do usuário (14/11/2026): o site vai precisar de RTSP.** O cliente cadastra
+  as câmeras (endereço RTSP do DVR/NVR Intelbras) e o sistema lê o vídeo por RTSP.
+  Navegador não toca RTSP direto: para ver ao vivo no site, usar uma ponte
+  (ex.: go2rtc ou MediaMTX) que converte RTSP → WebRTC/HLS. Para a IA, Python (OpenCV/FFmpeg) lê o RTSP.
 - MiroFish: `~/MiroFish` configurado para Gemini grátis, mas sem chaves (usuário desistiu). Não insistir.
   Semente pronta em `docs/mirofish/seed-liveon.md`.
 
