@@ -15,6 +15,7 @@ import {
   ajustarNomeDoRobo,
   call,
   contaDoChat,
+  garantirFotoDoRobo,
   donoDoCodigo,
   nomeDoRobo,
   salvarLink,
@@ -34,6 +35,7 @@ const g = globalThis as unknown as { __liveonRobo?: boolean };
 export function iniciarRobo() {
   if (g.__liveonRobo || !telegramConfigured()) return;
   g.__liveonRobo = true;
+  void garantirFotoDoRobo();
   void ouvir();
   console.log("[robô do Telegram] ouvindo mensagens.");
 }

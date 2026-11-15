@@ -185,3 +185,20 @@ export function telegramTexto(t: TelegramStatus) {
   if (t.conectado) return `conectado (${t.nome || "cliente"}). Os alertas já vão chegar no robô "${t.nomeRobo}".`;
   return `NÃO conectado. Mande este link para o cliente e diga para tocar em "Começar" no robô "${t.nomeRobo}": ${t.url}`;
 }
+
+/** Foto de perfil do robô (logo Live.On, assets/robo-telegram.jpg). Se o perfil estiver sem foto, coloca. */
+export async function garantirFotoDoRobo() {
+  try {
+    const { id } = await call<{ id: number }>("getMe");
+    const fotos = await call<{ total_count: number }>("getUserProfilePhotos", { user_id: id, limit: 1 });
+    if (fotos.total_count > 0) return;
+    const jpg = await readFile(path.join(process.cwd(), "assets", "robo-telegram.jpg"));
+    const form = new FormData();
+    form.append("photo", JSON.stringify({ type: "static", photo: "attach://avatar" }));
+    form.append("avatar", new Blob([new Uint8Array(jpg)], { type: "image/jpeg" }), "robo.jpg");
+    await call("setMyProfilePhoto", form);
+    console.log("[robô do Telegram] foto de perfil colocada.");
+  } catch (e) {
+    console.warn("[robô do Telegram] não consegui conferir a foto de perfil:", e instanceof Error ? e.message : e);
+  }
+}
