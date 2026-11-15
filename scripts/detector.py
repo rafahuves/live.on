@@ -189,13 +189,16 @@ def main():
     pasta_modelo = RAIZ / "models"
     pasta_modelo.mkdir(exist_ok=True)
     os.chdir(pasta_modelo)  # o YOLO baixa o modelo (≈6 MB) aqui na primeira vez
-    modelo = YOLO("yolo11n.pt")
+    modelo = YOLO("yolo11n.pt")  # rápido: olha todas as câmeras o tempo todo
+    # Preciso (lento, ~4 s na CPU): só para conferir a imagem quando um alerta de pessoa ia ser descartado.
+    preciso = YOLO("yolo11x.pt") if (pasta_modelo / "yolo11x.pt").exists() else None
     # CPU por padrão: a placa de vídeo do Mac (MPS) trava com este PyTorch no macOS 14. O modelo pequeno
     # (yolo11n) leva menos de 0,1 s por imagem na CPU. Para testar a placa: DETECTOR_APARELHO=mps.
     aparelho = os.environ.get("DETECTOR_APARELHO", "cpu")
     torch.set_num_threads(4)  # deixa núcleos livres para o site e o conversor
     log(f"detector ligado (YOLO em {aparelho}).")
 
+    main.ultimo_preciso = 0.0  # no máximo 1 conferência do modelo preciso a cada 5 s (todas as câmeras)
     cameras = {}        # stream -> Camera
     estado = {}         # (uid, cam) -> {"pessoas": bool, "desde": t, "visto": t, "liso_desde": t}
     ultimo_alerta = {}  # (id da análise, cam) -> t
@@ -278,6 +281,14 @@ def main():
                 disparar = False
                 if tipo in ("pessoa_fora_do_horario", "invasao_de_area"):
                     disparar = n > 0
+                    # O rápido não viu ninguém, mas pode ter perdido (pessoa deitada, pequena): o preciso confere
+                    # no máximo 1x por minuto por câmera e 1x a cada 5 s no total, para não pesar.
+                    if not disparar and preciso and t - e.get("conferido", 0) > 60 and t - main.ultimo_preciso > 5:
+                        e["conferido"] = main.ultimo_preciso = t
+                        rx = preciso.predict(imagens[i], classes=[0], conf=0.30, device=aparelho, verbose=False)[0]
+                        caixas = [tuple(map(float, b)) for b in rx.boxes.xyxy.tolist()]
+                        n = len(caixas)
+                        disparar = n > 0
                 elif tipo == "contagem_de_pessoas":
                     disparar = n > (limite or 5)
                 elif tipo == "permanencia_em_area":
