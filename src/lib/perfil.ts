@@ -2,7 +2,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { DIAS, TIPOS, type AnaliseInput } from "./analises-tipos";
-import { LOCAIS, MOSTRA, sugestoes, type Perfil } from "./perfil-tipos";
+import { LOCAIS, MOSTRA, sugestoesDa, type Perfil } from "./perfil-tipos";
 
 export * from "./perfil-tipos";
 
@@ -43,6 +43,15 @@ export function validarPerfil(x: unknown, canais: number[]): Perfil | string {
     if (typeof c.nome !== "string" || c.nome.length > 40) return "Nome de câmera inválido.";
     if (!MOSTRA.some((m) => m.id === c.mostra)) return "Escolha o que cada câmera mostra.";
     if (!Array.isArray(c.tipos) || !c.tipos.every((t) => TIPOS.includes(t as (typeof TIPOS)[number]))) return "Análise inválida.";
+    if (c.descricao !== undefined && (typeof c.descricao !== "string" || c.descricao.length > 300)) return "Descrição muito longa.";
+    if (
+      c.sugeridas !== undefined &&
+      (!Array.isArray(c.sugeridas) ||
+        !(c.sugeridas as Record<string, unknown>[]).every(
+          (s) => TIPOS.includes(s.tipo as (typeof TIPOS)[number]) && typeof s.texto === "string" && s.texto.length <= 120,
+        ))
+    )
+      return "Sugestão inválida.";
   }
   return { ...(p as unknown as Perfil), contato_whatsapp: zap };
 }
@@ -54,7 +63,7 @@ export function analisesDoPerfil(p: Perfil): AnaliseInput[] {
   for (const c of p.cameras) {
     const nomeCam = c.nome.trim() || `Câmera ${c.ch}`;
     for (const tipo of c.tipos) {
-      const texto = sugestoes(c.mostra, p.local).find((s) => s.tipo === tipo)?.texto ?? tipo;
+      const texto = sugestoesDa(c, p.local).find((s) => s.tipo === tipo)?.texto ?? tipo;
       const fora = tipo === "pessoa_fora_do_horario";
       out.push({
         nome: `${texto} · ${nomeCam}`,

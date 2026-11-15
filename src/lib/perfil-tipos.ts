@@ -49,7 +49,37 @@ export function sugestoes(mostra: Mostra, local: Local): Sugestao[] {
   return [...por[mostra], tampada];
 }
 
-export type PerfilCamera = { ch: number; nome: string; mostra: Mostra; tipos: Tipo[] };
+// Sem IA (ou se ela falhar): lê palavras do texto do cliente e escolhe as análises mais próximas.
+export function sugestoesPorTexto(texto: string, local: Local): Sugestao[] {
+  const t = texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const tem = (...ps: string[]) => ps.some((p) => t.includes(p));
+  const out: Sugestao[] = [];
+  const add = (tipo: Tipo, txt: string) => !out.some((s) => s.tipo === tipo) && out.push({ tipo, texto: txt });
+  if (tem("porta", "portao", "entrada", "saida", "corredor", "passag", "catraca", "doca"))
+    add("passagens_por_area", "Contar quantas vezes passam por ali");
+  if (tem("fila", "aglomer", "lotad", "quantas pessoas", "muita gente", "movimento"))
+    add("contagem_de_pessoas", "Muita gente ao mesmo tempo");
+  if (tem("parad", "demora", "permanec", "fica muito", "vadi", "ronda"))
+    add("permanencia_em_area", "Pessoa parada muito tempo");
+  if (tem("cerca", "muro", "telhado", "proibid", "restrit", "maquina", "piscina", "patio", "area marcada", "invas"))
+    add("invasao_de_area", "Alguém entrando na área marcada");
+  if (!tem("dia todo", "24h", "sempre aberto")) add("pessoa_fora_do_horario", sugestoes("outro", local)[0].texto);
+  add("camera_sem_sinal_ou_tampada", "Câmera sem sinal ou tampada");
+  return out;
+}
+
+export type PerfilCamera = {
+  ch: number;
+  nome: string;
+  mostra: Mostra;
+  tipos: Tipo[];
+  descricao?: string; // quando "Outro": o que o cliente escreveu
+  sugeridas?: Sugestao[]; // quando "Outro": o que a IA (ou o leitor de palavras) sugeriu
+};
+
+/** Análises que aparecem para a câmera: as da IA quando é "Outro" e já há sugestão; senão, as prontas. */
+export const sugestoesDa = (c: PerfilCamera, local: Local): Sugestao[] =>
+  c.mostra === "outro" && c.sugeridas?.length ? c.sugeridas : sugestoes(c.mostra, local);
 
 export type Perfil = {
   local: Local;

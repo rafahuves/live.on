@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { DIAS } from "@/lib/analises-tipos";
-import { LOCAIS, MOSTRA, sugestoes, type Local, type Mostra, type Perfil, type PerfilCamera } from "@/lib/perfil-tipos";
+import { LOCAIS, MOSTRA, sugestoes, sugestoesDa, type Local, type Mostra, type Perfil, type PerfilCamera, type Sugestao } from "@/lib/perfil-tipos";
 import { salvarConfiguracao } from "./actions";
 
 const DIA_LABEL: Record<string, string> = { seg: "Seg", ter: "Ter", qua: "Qua", qui: "Qui", sex: "Sex", sab: "Sáb", dom: "Dom" };
@@ -43,7 +43,7 @@ export default function Wizard({ canais, inicial }: { canais: number[]; inicial:
           ? { inicio: "23:00", fim: "06:00", dias: [...DIAS] }
           : { inicio: "08:00", fim: "18:00", dias: ["seg", "ter", "qua", "qui", "sex", "sab"] }
         : {}),
-      cameras: x.cameras.map((c) => ({ ...c, tipos: sugestoes(c.mostra, local).map((s) => s.tipo) })),
+      cameras: x.cameras.map((c) => ({ ...c, tipos: sugestoesDa(c, local).map((s) => s.tipo) })),
     }));
     setPasso(2);
   }
@@ -52,7 +52,33 @@ export default function Wizard({ canais, inicial }: { canais: number[]; inicial:
     setP((x) => ({ ...x, cameras: x.cameras.map((c) => (c.ch === ch ? { ...c, ...patch } : c)) }));
 
   function setMostra(ch: number, mostra: Mostra) {
-    setCam(ch, { mostra, tipos: sugestoes(mostra, p.local).map((s) => s.tipo) });
+    const c = p.cameras.find((x) => x.ch === ch);
+    const lista = mostra === "outro" && c?.sugeridas?.length ? c.sugeridas : sugestoes(mostra, p.local);
+    setCam(ch, { mostra, tipos: lista.map((s) => s.tipo) });
+  }
+
+  // "Outro": manda o texto para a IA, que escolhe as análises possíveis.
+  const [pensando, setPensando] = useState<number | null>(null);
+  const [obs, setObs] = useState<Record<number, string>>({});
+  async function sugerir(c: PerfilCamera) {
+    const texto = (c.descricao ?? "").trim();
+    if (texto.length < 3) return setObs((o) => ({ ...o, [c.ch]: "Escreva o que a câmera mostra." }));
+    setPensando(c.ch);
+    try {
+      const r = await fetch("/api/configurar/sugerir", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ texto, local: p.local }),
+      });
+      const d = (await r.json()) as { sugestoes?: Sugestao[]; observacao?: string; error?: string };
+      if (!r.ok || !d.sugestoes) throw new Error(d.error ?? "Não deu certo.");
+      setCam(c.ch, { sugeridas: d.sugestoes, tipos: d.sugestoes.map((s) => s.tipo) });
+      setObs((o) => ({ ...o, [c.ch]: d.observacao ?? "" }));
+    } catch (e) {
+      setObs((o) => ({ ...o, [c.ch]: e instanceof Error ? e.message : "Não deu certo. Tente de novo." }));
+    } finally {
+      setPensando(null);
+    }
   }
 
   function toggleTipo(c: PerfilCamera, tipo: PerfilCamera["tipos"][number]) {
@@ -133,8 +159,31 @@ export default function Wizard({ canais, inicial }: { canais: number[]; inicial:
                       </button>
                     ))}
                   </div>
+                  {c.mostra === "outro" && (
+                    <div className="mt-3">
+                      <label className="block">
+                        <span className="text-xs font-semibold text-muted">O que essa câmera mostra e o que você quer saber?</span>
+                        <textarea
+                          value={c.descricao ?? ""}
+                          maxLength={300}
+                          rows={2}
+                          placeholder="Ex.: doca de carga do galpão; quero saber se alguém mexe nos pallets à noite"
+                          onChange={(e) => setCam(c.ch, { descricao: e.target.value })}
+                          className={input}
+                        />
+                      </label>
+                      <button
+                        onClick={() => sugerir(c)}
+                        disabled={pensando === c.ch}
+                        className="mt-2 rounded-full bg-brand px-4 py-1.5 text-sm font-semibold text-white hover:bg-brand-dark disabled:opacity-60"
+                      >
+                        {pensando === c.ch ? "A IA está pensando…" : c.sugeridas?.length ? "Sugerir de novo" : "Ver o que dá para analisar"}
+                      </button>
+                      {obs[c.ch] && <p className="mt-2 text-sm text-muted">{obs[c.ch]}</p>}
+                    </div>
+                  )}
                   <ul className="mt-3 space-y-1.5">
-                    {sugestoes(c.mostra, p.local).map((s) => (
+                    {sugestoesDa(c, p.local).map((s) => (
                       <li key={s.tipo}>
                         <label className="flex items-center gap-2 text-sm">
                           <input type="checkbox" checked={c.tipos.includes(s.tipo)} onChange={() => toggleTipo(c, s.tipo)} className="h-4 w-4 accent-[#7C3AED]" />
