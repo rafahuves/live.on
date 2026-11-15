@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/supabase/server";
-import { deleteDvr, discoverDvrs, go2rtcOnline, saveDvr, testDvr, type Dvr } from "@/lib/dvr";
+import { deleteDvr, detectActive, discoverDvrs, go2rtcOnline, loadDvr, saveDvr, testDvr, type Dvr } from "@/lib/dvr";
 
 export type ConnectState = { error?: string } | null;
 
@@ -26,9 +26,21 @@ export async function connectDvr(_prev: ConnectState, form: FormData): Promise<C
   if (!(await testDvr(dvr))) {
     return { error: "Não consegui ver a câmera 1. Confira o endereço, o usuário e a senha do gravador." };
   }
-  await saveDvr(user.id, dvr);
+  const active = await detectActive(dvr);
+  await saveDvr(user.id, active ? { ...dvr, active } : dvr);
   revalidatePath("/cameras");
   return null;
+}
+
+// "Procurar câmeras de novo": refaz a lista de canais com câmera (um canal por vez).
+export async function rescanChannels() {
+  const user = await getCurrentUser();
+  if (!user) return;
+  const dvr = await loadDvr(user.id);
+  if (!dvr) return;
+  const active = await detectActive(dvr);
+  if (active) await saveDvr(user.id, { ...dvr, active });
+  revalidatePath("/cameras");
 }
 
 export async function disconnectDvr() {

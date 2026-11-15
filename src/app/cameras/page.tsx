@@ -2,11 +2,10 @@ import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
 import { getCurrentUser } from "@/lib/supabase/server";
-import { ensureStreams, go2rtcOnline, loadDvr } from "@/lib/dvr";
-import { MAX_LIVE } from "@/lib/dvrGuard";
+import { detectActive, ensureStreams, go2rtcOnline, loadDvr, saveDvr } from "@/lib/dvr";
 import CameraGrid from "./CameraGrid";
 import ConnectDvr from "./ConnectDvr";
-import { disconnectDvr } from "./actions";
+import { disconnectDvr, rescanChannels } from "./actions";
 
 export const metadata = { title: "Minhas câmeras | Live.On" };
 
@@ -18,7 +17,13 @@ export default function CamerasPage() {
         <h1 className="font-display text-3xl font-bold tracking-tight">Minhas câmeras</h1>
         <p className="mt-1 text-muted">Ao vivo, direto do seu gravador.</p>
         <div className="mt-8">
-          <Suspense fallback={<p className="text-muted">Carregando…</p>}>
+          <Suspense
+            fallback={
+              <p className="text-muted">
+                Carregando… Na primeira vez o Live.On procura quais canais têm câmera, um de cada vez (uns 20 s).
+              </p>
+            }
+          >
             <Cameras />
           </Suspense>
         </div>
@@ -43,21 +48,37 @@ async function Cameras() {
     );
   }
 
-  const dvr = await loadDvr(user.id);
+  let dvr = await loadDvr(user.id);
   if (!dvr) return <ConnectDvr />;
+
+  // Primeira vez: descobre quais canais têm câmera (um por vez) e guarda.
+  if (!dvr.active) {
+    const active = await detectActive(dvr);
+    if (active) {
+      dvr = { ...dvr, active };
+      await saveDvr(user.id, dvr);
+    }
+  }
+  const empty = dvr.active ? Array.from({ length: dvr.channels }, (_, i) => i + 1).filter((c) => !dvr.active!.includes(c)) : [];
 
   const names = await ensureStreams(user.id, dvr);
   return (
     <>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3 text-sm text-muted">
         <span>
-          Gravador {dvr.host} · {dvr.channels} câmeras · usuário {dvr.user}
+          Gravador {dvr.host} · {names.length} câmeras · usuário {dvr.user}
+          {empty.length > 0 && <> · canais sem câmera: {empty.join(", ")}</>}
         </span>
-        <form action={disconnectDvr}>
-          <button className="font-semibold text-brand hover:underline">Trocar gravador</button>
-        </form>
+        <span className="flex gap-4">
+          <form action={rescanChannels}>
+            <button className="font-semibold text-brand hover:underline">Procurar câmeras de novo</button>
+          </form>
+          <form action={disconnectDvr}>
+            <button className="font-semibold text-brand hover:underline">Trocar gravador</button>
+          </form>
+        </span>
       </div>
-      <CameraGrid cams={names} max={MAX_LIVE} />
+      <CameraGrid cams={names} />
     </>
   );
 }

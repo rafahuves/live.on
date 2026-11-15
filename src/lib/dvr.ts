@@ -5,7 +5,10 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { ensureShield, shieldPort } from "./dvrShield";
 
-export type Dvr = { host: string; port: number; user: string; pass: string; channels: number };
+// active: canais que têm câmera (descobertos testando um canal por vez). Sem a lista = todos.
+export type Dvr = { host: string; port: number; user: string; pass: string; channels: number; active?: number[] };
+
+export const activeChannels = (d: Dvr) => d.active ?? Array.from({ length: d.channels }, (_, i) => i + 1);
 
 const DIR = path.join(process.cwd(), "data", "dvr");
 const GO2RTC = "http://127.0.0.1:1984";
@@ -100,13 +103,13 @@ async function removeStreams(userId: string) {
 
 // Garante que as câmeras desta conta estão no go2rtc (ele perde tudo quando reinicia). Devolve os nomes, em ordem.
 export async function ensureStreams(userId: string, dvr: Dvr): Promise<string[]> {
-  await ensureShield(dvr.host, dvr.port);
+  await ensureShield(dvr.host, dvr.port, dvr.channels);
   const prefix = streamPrefix(userId);
   const current = await streams();
   // Só aceita câmera que passa pelo escudo; qualquer uma apontando direto para o gravador é refeita.
   const ok = (name: string, url: string) => current[name]?.producers?.some((p) => p.url === url);
   const names: string[] = [];
-  for (let ch = 1; ch <= dvr.channels; ch++) {
+  for (const ch of activeChannels(dvr)) {
     const name = `${prefix}cam${ch}`;
     for (const [n, url] of [[name, rtspUrl(dvr, ch, 1)], [`${name}_hd`, rtspUrl(dvr, ch, 0)]]) {
       if (ok(n, url)) continue;
@@ -120,19 +123,40 @@ export async function ensureStreams(userId: string, dvr: Dvr): Promise<string[]>
 }
 
 // Testa usuário/senha/IP pegando uma imagem do canal 1. Com dados errados o go2rtc devolve imagem vazia.
-export async function testDvr(dvr: Dvr): Promise<boolean> {
-  await ensureShield(dvr.host, dvr.port);
+// Pega UMA imagem de um canal (1 conexão, aberta e fechada). Devolve o tamanho em bytes (0 = sem imagem).
+async function frameSize(dvr: Dvr, ch: number): Promise<number> {
   const name = `teste_${randomBytes(4).toString("hex")}`;
-  await putStream(name, rtspUrl(dvr, 1, 1));
+  await putStream(name, rtspUrl(dvr, ch, 1));
   try {
     const res = await fetch(`${GO2RTC}/api/frame.jpeg?src=${name}`, { cache: "no-store", signal: AbortSignal.timeout(12000) });
-    const buf = await res.arrayBuffer();
-    return res.ok && buf.byteLength > 1000;
+    return res.ok ? (await res.arrayBuffer()).byteLength : 0;
   } catch {
-    return false;
+    return 0;
   } finally {
-    await fetch(`${GO2RTC}/api/streams?src=${name}`, { method: "DELETE" }).catch(() => {});
+    await deleteStream(name).catch(() => {});
   }
+}
+
+// Testa usuário/senha/IP pegando uma imagem do canal 1. Com dados errados o go2rtc devolve imagem vazia.
+export async function testDvr(dvr: Dvr): Promise<boolean> {
+  await ensureShield(dvr.host, dvr.port, dvr.channels);
+  return (await frameSize(dvr, 1)) > 1000;
+}
+
+// Descobre quais canais têm câmera: testa UM canal por vez, com pausa entre eles (nunca em rajada).
+// Canal sem câmera vem como tela preta escrita "VAZIO" (~5 KB); câmera de verdade passa de 10 KB.
+// Devolve null se o gravador não respondeu (aí não dá para concluir nada).
+export async function detectActive(dvr: Dvr): Promise<number[] | null> {
+  await ensureShield(dvr.host, dvr.port, dvr.channels);
+  const active: number[] = [];
+  let answered = 0;
+  for (let ch = 1; ch <= dvr.channels; ch++) {
+    const size = await frameSize(dvr, ch);
+    if (size > 0) answered++;
+    if (size > 10_000) active.push(ch);
+    await new Promise((r) => setTimeout(r, 700));
+  }
+  return answered ? active : null;
 }
 
 // Procura gravadores e câmeras na rede (ONVIF, pelo go2rtc). Devolve os IPs encontrados.

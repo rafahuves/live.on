@@ -1,13 +1,12 @@
 // Proteção do gravador do cliente. REGRA: o Live.On nunca pode sobrecarregar um DVR.
 // Todo vídeo ao vivo passa por aqui (rota /api/cam), e aqui valem três travas por conta:
-//  1. Limite de câmeras ao mesmo tempo (MAX_LIVE). Cada câmera ao vivo = 1 conexão no gravador.
+//  1. Limite de câmeras ao mesmo tempo (as câmeras do gravador + 1 HD). Cada câmera = 1 conexão no gravador.
 //  2. Antes de abrir vídeo, um teste leve (RTSP OPTIONS, 1 conexão) confirma que o gravador responde.
 //  3. Se o gravador não responder, o Live.On PARA de tentar por um tempo que cresce a cada falha
 //     (30 s, 1 min, 2 min, 5 min, 10 min). Nada de tentar de novo sem parar.
 // O estado fica na memória do servidor do site (um processo só, no computador da rede do gravador).
 import net from "node:net";
 
-export const MAX_LIVE = Math.max(1, Math.min(8, Number(process.env.LIVEON_MAX_CAMS) || 4));
 const PAUSAS_MS = [30_000, 60_000, 120_000, 300_000, 600_000];
 const PROBE_OK_MS = 30_000; // um teste bom vale por 30 s
 const PROBE_TIMEOUT_MS = 4_000;
@@ -87,9 +86,9 @@ export async function dvrHealthy(userId: string, host: string, port: number): Pr
 }
 
 /** Reserva uma vaga de câmera ao vivo. Devolve a função que libera (ou null se está no limite). */
-export function acquire(userId: string, stream: string): (() => void) | null {
+export function acquire(userId: string, stream: string, max: number): (() => void) | null {
   const s = stateOf(userId);
-  if (liveCount(userId) >= MAX_LIVE) return null;
+  if (liveCount(userId) >= max) return null;
   s.live.set(stream, (s.live.get(stream) ?? 0) + 1);
   let released = false;
   return () => {

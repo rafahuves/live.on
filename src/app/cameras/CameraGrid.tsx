@@ -2,13 +2,16 @@
 
 import { useEffect, useRef, useState } from "react";
 
-// Cuidado com o gravador do cliente: a tela NUNCA abre todas as câmeras de uma vez.
-// - No máximo `max` câmeras ao vivo (o servidor também trava isso em /api/cam).
-// - Ao abrir a página, liga uma câmera por vez: a próxima só começa quando a anterior mostrou imagem.
-// - Se uma câmera falha, a tela para de ligar as outras e não tenta de novo sozinha.
-// - No "Ampliar (HD)", a grade pausa: fica só 1 conexão no gravador.
+// Dashboard com todas as câmeras, com o mesmo cuidado do app da Intelbras:
+// - liga UMA câmera por vez: a próxima só começa 1,5 s depois que a anterior mostrou imagem;
+// - se uma câmera falha, para de ligar as outras e não tenta de novo sozinha (só no botão);
+// - aba escondida por mais de 30 s desliga tudo; ao voltar, religa uma por vez;
+// - o HD (ampliar) é 1 câmera a mais, só enquanto está aberto.
+// Por baixo, o servidor (/api/cam) e o escudo (src/lib/dvrShield.ts) garantem os limites de qualquer jeito.
 const label = (name: string) => `Câmera ${name.replace(/^.*cam/, "")}`;
 const remote = (src: string) => `/api/cam?src=${encodeURIComponent(src)}`;
+const GAP_MS = 1500;
+const HIDDEN_MS = 30_000;
 
 async function motivo(): Promise<string> {
   try {
@@ -18,20 +21,50 @@ async function motivo(): Promise<string> {
       pausedFor: number;
     };
     if (s.pausedFor > 0) return `O gravador não respondeu. Para protegê-lo, o Live.On espera ${s.pausedFor} s antes de tentar de novo.`;
-    if (s.live >= s.max) return `Limite de ${s.max} câmeras ao vivo ao mesmo tempo. Pare outra câmera (ou feche outra aba).`;
+    if (s.live >= s.max) return "Muitos vídeos abertos ao mesmo tempo (outra aba ou celular?). Feche um e tente de novo.";
   } catch {}
   return "Câmera sem imagem agora.";
 }
 
-export default function CameraGrid({ cams, max }: { cams: string[]; max: number }) {
-  const [playing, setPlaying] = useState<string[]>(() => cams.slice(0, 1)); // começa só pela primeira
+export default function CameraGrid({ cams }: { cams: string[] }) {
+  const [playing, setPlaying] = useState<string[]>(() => cams.slice(0, 1));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [open, setOpen] = useState<string | null>(null);
-  const auto = useRef(true); // ligando as primeiras câmeras, uma por vez
+  const [asleep, setAsleep] = useState(false);
+  const [starting, setStarting] = useState(true); // ligando as câmeras, uma por vez
+  const auto = useRef(true);
+  const errorsRef = useRef(errors);
+  const playingRef = useRef(playing);
+  useEffect(() => {
+    errorsRef.current = errors;
+    playingRef.current = playing;
+  }, [errors, playing]);
+  const setAuto = (v: boolean) => {
+    auto.current = v;
+    setStarting(v);
+  };
 
-  // Algumas versões do navegador não avisam "carregou" em vídeo MJPEG. Se a última câmera ligada ficar
-  // 5 s sem erro, conta como carregada e liga a próxima (o servidor só responde depois da 1ª imagem).
+  // Liga a próxima câmera depois de um intervalo. Chamado quando a última mostrou imagem
+  // (ou ficou 5 s sem erro: alguns navegadores não avisam "carregou" em MJPEG).
+  function next(after: string) {
+    if (!auto.current) return;
+    setTimeout(() => {
+      if (!auto.current) return;
+      const p = playingRef.current;
+      if (p[p.length - 1] !== after) return;
+      const n = cams.find((c) => !p.includes(c) && !errorsRef.current[c]);
+      if (!n) return setAuto(false);
+      setPlaying([...p, n]);
+    }, GAP_MS);
+  }
+
   const last = playing[playing.length - 1];
+  const advanced = useRef<string | null>(null);
+  function loaded(cam: string) {
+    if (cam !== last || advanced.current === cam) return;
+    advanced.current = cam;
+    next(cam);
+  }
   useEffect(() => {
     if (!last || !auto.current) return;
     const t = setTimeout(() => loaded(last), 5000);
@@ -39,49 +72,92 @@ export default function CameraGrid({ cams, max }: { cams: string[]; max: number 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [last]);
 
-  function loaded(cam: string) {
-    if (!auto.current) return;
-    setPlaying((p) => {
-      if (p.length >= max || p[p.length - 1] !== cam) return p;
-      const next = cams.find((c) => !p.includes(c) && !errors[c]);
-      if (!next || cams.indexOf(next) >= max) {
-        auto.current = false;
-        return p;
+  // Aba escondida por muito tempo: desliga tudo (como o app do celular em segundo plano).
+  useEffect(() => {
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const onVis = () => {
+      clearTimeout(t);
+      if (document.hidden) {
+        t = setTimeout(() => {
+          setAuto(false);
+          setAsleep(true);
+          setPlaying([]);
+        }, HIDDEN_MS);
       }
-      return [...p, next];
-    });
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, []);
+
+  function wake() {
+    setAsleep(false);
+    setErrors({});
+    advanced.current = null;
+    setAuto(true);
+    setPlaying(cams.slice(0, 1));
   }
 
   async function failed(cam: string) {
-    auto.current = false;
+    setAuto(false);
     setPlaying((p) => p.filter((c) => c !== cam));
     const msg = await motivo();
     setErrors((e) => ({ ...e, [cam]: msg }));
   }
 
-  function play(cam: string) {
-    auto.current = false;
+  function retry(cam: string) {
     setErrors((e) => {
       const rest = { ...e };
       delete rest[cam];
       return rest;
     });
-    setPlaying((p) => [...p.filter((c) => c !== cam), cam].slice(-max)); // passa do limite → para a mais antiga
+    setPlaying((p) => (p.includes(cam) ? p : [...p, cam]));
   }
 
-  const stop = (cam: string) => setPlaying((p) => p.filter((c) => c !== cam));
+  // Continua ligando as que faltam (depois de um erro, por exemplo), uma por vez.
+  function resume() {
+    setErrors({});
+    advanced.current = null;
+    setAuto(true);
+    setPlaying((p) => {
+      const n = cams.find((c) => !p.includes(c));
+      return n ? [...p, n] : p;
+    });
+  }
+
+  const missing = cams.filter((c) => !playing.includes(c) && !errors[c]).length;
 
   return (
     <>
-      <p className="mb-3 text-xs text-muted">
-        Para proteger o seu gravador, até {max} câmeras ficam ao vivo ao mesmo tempo. Toque em outra para trocar.
-      </p>
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      {asleep ? (
+        <div className="mb-4 rounded-2xl border border-line bg-soft p-4 text-sm">
+          As câmeras foram desligadas porque a página ficou em segundo plano (para poupar o gravador).{" "}
+          <button onClick={wake} className="font-semibold text-brand hover:underline">
+            Ligar de novo
+          </button>
+        </div>
+      ) : (
+        missing > 0 &&
+        !starting && (
+          <div className="mb-4 text-sm">
+            <button onClick={resume} className="font-semibold text-brand hover:underline">
+              Ligar as câmeras que faltam ({missing})
+            </button>
+          </div>
+        )
+      )}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
         {cams.map((cam) => {
-          const live = !open && playing.includes(cam);
+          const live = playing.includes(cam) && open !== cam;
           return (
             <figure key={cam} className="overflow-hidden rounded-2xl border border-line bg-white">
-              <div className="relative flex aspect-video items-center justify-center bg-black">
+              <button
+                onClick={() => setOpen(cam)}
+                className="relative flex aspect-video w-full items-center justify-center bg-black"
+                aria-label={`Ampliar ${label(cam)}`}
+              >
                 {live ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -92,30 +168,22 @@ export default function CameraGrid({ cams, max }: { cams: string[]; max: number 
                     onError={() => failed(cam)}
                   />
                 ) : errors[cam] ? (
-                  <div className="px-6 text-center text-sm text-white/80">
-                    <p>{errors[cam]}</p>
-                    <button onClick={() => play(cam)} className="mt-3 rounded-full border border-white/40 px-4 py-1.5 font-semibold text-white">
-                      Tentar de novo
-                    </button>
-                  </div>
+                  <span className="px-6 text-center text-sm text-white/80">{errors[cam]}</span>
                 ) : (
-                  <button onClick={() => play(cam)} className="rounded-full bg-white/10 px-5 py-2 text-sm font-semibold text-white hover:bg-white/20">
-                    ▶ Ver ao vivo
-                  </button>
+                  <span className="text-sm text-white/50">{open === cam ? "Aberta em HD" : "Na fila…"}</span>
                 )}
-              </div>
-              <figcaption className="flex items-center justify-between px-4 py-3 text-sm">
+              </button>
+              <figcaption className="flex items-center justify-between px-4 py-2.5 text-sm">
                 <span className="font-semibold">{label(cam)}</span>
-                <span className="flex gap-4">
-                  {live && (
-                    <button onClick={() => stop(cam)} className="font-semibold text-muted hover:underline">
-                      Parar
-                    </button>
-                  )}
+                {errors[cam] ? (
+                  <button onClick={() => retry(cam)} className="font-semibold text-brand hover:underline">
+                    Tentar de novo
+                  </button>
+                ) : (
                   <button onClick={() => setOpen(cam)} className="font-semibold text-brand hover:underline">
                     Ampliar (HD)
                   </button>
-                </span>
+                )}
               </figcaption>
             </figure>
           );

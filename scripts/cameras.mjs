@@ -12,6 +12,8 @@ if (!existsSync("bin/go2rtc")) {
 const config = JSON.stringify({
   api: { listen: "127.0.0.1:1984", origin: "*" },
   rtsp: { listen: "127.0.0.1:8554" },
+  // Conversão para o navegador: no máximo 10 imagens/s (o padrão chegava a 50 e pesava no computador).
+  ffmpeg: { mjpeg: "-c:v mjpeg -r 10 -q:v 5" },
 });
 
 console.log("go2rtc ligado. Abra http://localhost:3000/cameras e conecte o seu gravador.");

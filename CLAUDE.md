@@ -55,8 +55,13 @@ quando algo importante acontece (ex.: pessoa fora do horário, câmera tampada).
   (30 s → 10 min) quando o gravador não responde. A tela (`CameraGrid`) liga uma câmera por vez e não tenta de novo
   sozinha; o HD pausa a grade. Não criar caminho de vídeo que pule essas travas.
   **Escudo (`src/lib/dvrShield.ts`)**: nada conecta direto no gravador. As URLs RTSP no go2rtc apontam para
-  `127.0.0.1:<porta do escudo>` e só o escudo fala com o DVR: máx. 5 conexões juntas, 12 novas/min, bloqueio
-  crescente se o gravador não responde. Testado em 2026-11-15 com rajada de 11 câmeras: escudo segurou, DVR ok.
+  `127.0.0.1:<porta do escudo>` e só o escudo fala com o DVR: máx. (canais + 2) conexões juntas, ritmo de 1 conexão
+  nova a cada 300 ms (rajada vira fila), (2×canais + 4) novas/min, bloqueio crescente se o gravador não responde.
+- **Dashboard (`/cameras`)**: mostra TODAS as câmeras com câmera ligada (canais vazios "VAZIO" são descobertos um
+  por vez e escondidos; `Dvr.active`). Liga uma câmera a cada 1,5 s, sem tentar de novo sozinha; aba escondida
+  30 s desliga tudo. Grade: 480 px, 2 imagens/s (filtro em `/api/cam`); HD: 1280 px. Conversor limitado a
+  10 imagens/s (`ffmpeg.mjpeg` em `scripts/cameras.mjs`). Teste de 2026-11-15 no DVR de casa: 11 câmeras abertas,
+  gravador respondendo em ~20 ms, CPU ~60% de 1 núcleo.
   A análise em Python (futura) também deve ler do go2rtc, nunca do gravador.
 - **Análises personalizadas** (`/analises`): chat com a Claude (`claude-opus-5-5`, effort low, `fallbacks: "default"`) em
   `src/app/api/chat/route.ts`; a ferramenta `salvar_analise` (strict) grava em `data/analises/<id da conta>.json` (local, fora do Git).

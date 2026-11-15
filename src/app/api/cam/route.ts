@@ -1,6 +1,6 @@
 import { getCurrentUser } from "@/lib/supabase/server";
-import { loadDvr, streamPrefix } from "@/lib/dvr";
-import { acquire, dvrHealthy, liveCount, MAX_LIVE, pausedFor, reportFailure, reportSuccess } from "@/lib/dvrGuard";
+import { activeChannels, loadDvr, streamPrefix } from "@/lib/dvr";
+import { acquire, dvrHealthy, liveCount, pausedFor, reportFailure, reportSuccess } from "@/lib/dvrGuard";
 import { ensureShield, shieldBlockedFor } from "@/lib/dvrShield";
 
 // Vídeo ao vivo de uma câmera em MJPEG. TODO vídeo passa por aqui, e aqui ficam as travas que
@@ -9,6 +9,40 @@ import { ensureShield, shieldBlockedFor } from "@/lib/dvrShield";
 // câmeras; o go2rtc continua fechado em 127.0.0.1.
 const GO2RTC = "http://127.0.0.1:1984";
 const FIRST_FRAME_MS = 12_000;
+// Mosaico leve: na grade, 480 px e no máximo 2 imagens/s chegam ao navegador (internet não pesa).
+// No HD (ampliar), 1280 px e tudo o que o conversor gera (até 10 imagens/s, ver scripts/cameras.mjs).
+const GRID = "#video=mjpeg#width=480";
+const HD = "#video=mjpeg#width=1280";
+const GRID_FRAME_MS = 500;
+const BOUNDARY = Buffer.from("--frame\r\n");
+
+// Deixa passar no máximo 1 imagem a cada `ms` (descarta as do meio). O vídeo vem em partes "--frame".
+function throttle(ms: number) {
+  let buf = Buffer.alloc(0);
+  let last = 0;
+  return new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, out) {
+      buf = Buffer.concat([buf, Buffer.from(chunk)]);
+      for (;;) {
+        const start = buf.indexOf(BOUNDARY);
+        if (start < 0) return;
+        const end = buf.indexOf(BOUNDARY, start + BOUNDARY.length);
+        if (end < 0) {
+          if (start > 0) buf = buf.subarray(start);
+          return;
+        }
+        const now = Date.now();
+        if (now - last >= ms) {
+          last = now;
+          out.enqueue(new Uint8Array(buf.subarray(start, end)));
+        }
+        buf = buf.subarray(end);
+      }
+    },
+  });
+}
+// Vagas de vídeo ao vivo: todas as câmeras do gravador + 1 HD. Cada uma = 1 conexão no gravador.
+const maxLive = (channels: number) => channels + 1;
 
 function fail(status: number, msg: string, retry?: number) {
   const headers: Record<string, string> = { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" };
@@ -21,13 +55,14 @@ export async function GET(request: Request) {
   if (!user) return fail(401, "Faça login de novo.");
 
   const params = new URL(request.url).searchParams;
+  const dvr = await loadDvr(user.id);
+  if (!dvr) return fail(404, "Nenhum gravador conectado.");
+  const max = maxLive(activeChannels(dvr).length);
 
   // Situação atual, para a tela explicar por que uma câmera não abriu.
   if (params.has("status")) {
-    const d = await loadDvr(user.id);
-    const blocked = d ? shieldBlockedFor(d.host, d.port) : 0;
     return Response.json(
-      { live: liveCount(user.id), max: MAX_LIVE, pausedFor: Math.max(pausedFor(user.id), blocked) },
+      { live: liveCount(user.id), max, pausedFor: Math.max(pausedFor(user.id), shieldBlockedFor(dvr.host, dvr.port)) },
       { headers: { "Cache-Control": "no-store" } },
     );
   }
@@ -40,23 +75,18 @@ export async function GET(request: Request) {
   if (wait > 0) return fail(503, `O gravador não respondeu. Nova tentativa em ${wait} s.`, wait);
 
   // Trava 1: limite de câmeras ao vivo ao mesmo tempo.
-  const release = acquire(user.id, src);
-  if (!release) return fail(429, `Limite de ${MAX_LIVE} câmeras ao vivo ao mesmo tempo.`, 5);
+  const release = acquire(user.id, src, max);
+  if (!release) return fail(429, `Limite de ${max} vídeos ao vivo ao mesmo tempo.`, 5);
 
   try {
-    // Trava 2: teste leve antes de pedir vídeo.
-    const dvr = await loadDvr(user.id);
-    if (!dvr) {
-      release();
-      return fail(404, "Nenhum gravador conectado.");
-    }
     // Escudo: toda conexão com o gravador passa por ele (src/lib/dvrShield.ts).
-    const shield = await ensureShield(dvr.host, dvr.port);
+    const shield = await ensureShield(dvr.host, dvr.port, dvr.channels);
     const blocked = shieldBlockedFor(dvr.host, dvr.port);
     if (blocked > 0) {
       release();
       return fail(503, `O gravador não respondeu. Nova tentativa em ${blocked} s.`, blocked);
     }
+    // Teste leve (1 conexão rápida) antes de pedir vídeo.
     if (!(await dvrHealthy(user.id, "127.0.0.1", shield))) {
       release();
       return fail(503, "O gravador não respondeu. O Live.On vai esperar antes de tentar de novo.", pausedFor(user.id));
@@ -64,8 +94,7 @@ export async function GET(request: Request) {
 
     // O gravador manda H.264; o navegador recebe MJPEG (conversão no go2rtc com ffmpeg).
     const mjpeg = `${src}_mjpeg`;
-    const width = src.endsWith("_hd") ? 1280 : 640;
-    const q = new URLSearchParams({ name: mjpeg, src: `ffmpeg:${src}#video=mjpeg#width=${width}` });
+    const q = new URLSearchParams({ name: mjpeg, src: `ffmpeg:${src}${src.endsWith("_hd") ? HD : GRID}` });
     await fetch(`${GO2RTC}/api/streams?${q}`, { method: "PUT", signal: AbortSignal.timeout(2000) });
 
     const ctrl = new AbortController();
@@ -124,7 +153,7 @@ export async function GET(request: Request) {
       },
     });
 
-    return new Response(body, {
+    return new Response(src.endsWith("_hd") ? body : body.pipeThrough(throttle(GRID_FRAME_MS)), {
       headers: {
         "Content-Type": upstream.headers.get("content-type") ?? "multipart/x-mixed-replace; boundary=frame",
         "Cache-Control": "no-store, no-transform",
