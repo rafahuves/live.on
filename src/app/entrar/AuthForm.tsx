@@ -14,10 +14,16 @@ export default function AuthForm({ mode }: { mode: "entrar" | "criar" }) {
     <form action={action} className="space-y-4">
       <input type="hidden" name="next" value={next} />
       {mode === "criar" && (
-        <label className="block">
-          <span className="text-sm font-medium">Nome</span>
-          <input name="name" autoComplete="name" className={field} />
-        </label>
+        <>
+          <label className="block">
+            <span className="text-sm font-medium">Nome</span>
+            <input name="name" autoComplete="name" required className={field} />
+          </label>
+          <label className="block">
+            <span className="text-sm font-medium">Empresa que trabalha</span>
+            <input name="company" autoComplete="organization" required className={field} />
+          </label>
+        </>
       )}
       <label className="block">
         <span className="text-sm font-medium">E-mail</span>

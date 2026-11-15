@@ -36,11 +36,14 @@ export async function signUp(_prev: AuthState, form: FormData): Promise<AuthStat
   const origin = (await headers()).get("origin") ?? "http://localhost:3000";
   const password = String(form.get("password") ?? "");
   if (password.length < 8) return { error: "A senha precisa ter pelo menos 8 caracteres." };
+  const name = String(form.get("name") ?? "").trim();
+  const company = String(form.get("company") ?? "").trim();
+  if (!name || !company) return { error: "Preencha o seu nome e a empresa que trabalha." };
   const { data, error } = await supabase.auth.signUp({
     email: String(form.get("email") ?? "").trim(),
     password,
     options: {
-      data: { name: String(form.get("name") ?? "").trim() },
+      data: { name, company },
       emailRedirectTo: `${origin}/auth/callback?next=/cameras`,
     },
   });
