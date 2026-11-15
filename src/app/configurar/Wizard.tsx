@@ -49,17 +49,20 @@ function padrao(canais: number[]): Perfil {
 export default function Wizard({
   canais,
   inicial,
+  empresa,
 }: {
   canais: number[];
   inicial: Perfil | null;
+  empresa: string;
 }) {
   const [passo, setPasso] = useState(inicial ? 2 : 1);
   const [p, setP] = useState<Perfil>(() => {
-    if (!inicial) return padrao(canais);
+    if (!inicial) return { ...padrao(canais), empresa };
     // Mantém o que já foi salvo e acrescenta câmeras novas.
     const base = padrao(canais);
     return {
       ...inicial,
+      empresa: inicial.empresa ?? empresa,
       cameras: base.cameras.map(
         (c) => inicial.cameras.find((x) => x.ch === c.ch) ?? c,
       ),
@@ -398,7 +401,13 @@ export default function Wizard({
               <h2 className="font-semibold">Quem recebe os alertas</h2>
               <p className="mt-1 text-sm text-muted">Por enquanto os alertas chegam pelo Telegram, com a foto da câmera.</p>
               <label className="mt-3 block">
-                <span className="text-xs font-semibold text-muted">Nome</span>
+                <span className="text-xs font-semibold text-muted">
+                  Empresa · o robô do Telegram vai se chamar &quot;Live.On - {p.empresa?.trim() || "Empresa"}&quot;
+                </span>
+                <input value={p.empresa ?? ""} maxLength={50} onChange={(e) => setP({ ...p, empresa: e.target.value })} className={input} />
+              </label>
+              <label className="mt-3 block">
+                <span className="text-xs font-semibold text-muted">Nome de quem recebe</span>
                 <input
                   value={p.contato_nome}
                   onChange={(e) => setP({ ...p, contato_nome: e.target.value })}

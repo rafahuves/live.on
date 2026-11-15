@@ -2,26 +2,14 @@ import { getCurrentUser } from "@/lib/supabase/server";
 import { activeChannels, loadDvr } from "@/lib/dvr";
 import { fotoDaCamera } from "@/lib/fotos";
 import { loadPerfil } from "@/lib/perfil";
-import { botUsername, enviarAlerta, linkCode, loadLink, removeLink, telegramConfigured, verifyLink } from "@/lib/telegram";
+import { enviarAlerta, removeLink, telegramConfigured, telegramStatus, verifyLink } from "@/lib/telegram";
 
 // Telegram da conta (fase de testes): status, ligar (verificar), alerta de teste com foto, desligar.
 export async function GET() {
   const user = await getCurrentUser();
   if (!user) return Response.json({ error: "Faça login de novo." }, { status: 401 });
-  if (!telegramConfigured()) return Response.json({ configurado: false });
-  try {
-    const bot = await botUsername();
-    const link = await loadLink(user.id);
-    return Response.json({
-      configurado: true,
-      bot,
-      url: `https://t.me/${bot}?start=${linkCode(user.id)}`,
-      conectado: !!link,
-      nome: link?.nome ?? null,
-    });
-  } catch {
-    return Response.json({ configurado: true, erro: "Não consegui falar com o Telegram. Confira o token do bot." });
-  }
+  const perfil = await loadPerfil(user.id);
+  return Response.json(await telegramStatus(user.id, perfil?.empresa || user.company));
 }
 
 export async function POST(request: Request) {

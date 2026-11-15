@@ -37,5 +37,5 @@ async function Conteudo() {
       </div>
     );
   }
-  return <Wizard canais={activeChannels(dvr)} inicial={await loadPerfil(user.id)} />;
+  return <Wizard canais={activeChannels(dvr)} inicial={await loadPerfil(user.id)} empresa={user.company ?? ""} />;
 }

@@ -23,7 +23,7 @@ export async function createClient() {
   });
 }
 
-export type CurrentUser = { id: string; email: string | null };
+export type CurrentUser = { id: string; email: string | null; company: string | null };
 
 // Usuário logado (validado pelo Supabase) ou null.
 export async function getCurrentUser(): Promise<CurrentUser | null> {
@@ -32,5 +32,10 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
   const { data } = await supabase.auth.getClaims();
   const claims = data?.claims;
   if (!claims?.sub) return null;
-  return { id: claims.sub, email: typeof claims.email === "string" ? claims.email : null };
+  const meta = (claims.user_metadata ?? {}) as { company?: unknown };
+  return {
+    id: claims.sub,
+    email: typeof claims.email === "string" ? claims.email : null,
+    company: typeof meta.company === "string" && meta.company.trim() ? meta.company.trim() : null,
+  };
 }

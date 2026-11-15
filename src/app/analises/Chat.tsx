@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import type Anthropic from "@anthropic-ai/sdk";
 import { TIPO_LABEL, type Analise } from "@/lib/analises-tipos";
 
@@ -22,6 +23,21 @@ function visibleText(m: Msg): string {
     .trim();
 }
 
+// Texto com links clicáveis (ex.: o link do robô do Telegram).
+function ComLinks({ text }: { text: string }) {
+  return text.split(/(https?:\/\/\S+)/g).map((parte, i) =>
+    /^https?:\/\//.test(parte) ? (
+      <a key={i} href={parte} target="_blank" rel="noreferrer" className="font-semibold underline break-all">
+        {parte}
+      </a>
+    ) : (
+      parte
+    ),
+  );
+}
+
+type Tg = { configurado: boolean; nomeRobo?: string; url?: string; conectado?: boolean; nome?: string | null };
+
 function resumo(a: Analise) {
   const partes = [TIPO_LABEL[a.tipo]];
   partes.push(a.cameras.length ? a.cameras.map((c) => c.replace("cam", "Câmera ")).join(", ") : "Todas as câmeras");
@@ -38,6 +54,25 @@ export default function Chat() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  // Depois de salvar a configuração (?configurado=1): aviso do chat com o link do robô do Telegram.
+  const configurado = useSearchParams().get("configurado") === "1";
+  const [tg, setTg] = useState<Tg | null>(null);
+  useEffect(() => {
+    if (!configurado) return;
+    fetch("/api/telegram", { cache: "no-store" })
+      .then((r) => r.json())
+      .then(setTg)
+      .catch(() => {});
+  }, [configurado]);
+  const aviso = !configurado
+    ? null
+    : !tg
+      ? "Configuração salva! Conferindo o seu Telegram…"
+      : !tg.configurado
+        ? "Configuração salva! As análises já estão na lista ao lado. (O robô do Telegram ainda não foi configurado neste computador.)"
+        : tg.conectado
+          ? `Configuração salva! Os alertas vão chegar no Telegram, na conversa com o robô "${tg.nomeRobo}", com a foto da câmera.`
+          : `Configuração salva! Agora ligue o Telegram para receber os alertas com foto. Abra o robô "${tg.nomeRobo}" por este link e toque em "Começar":\n${tg.url}`;
 
   useEffect(() => {
     fetch("/api/analises", { cache: "no-store" })
@@ -91,6 +126,13 @@ export default function Chat() {
     <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_320px]">
       <section className="flex h-[min(640px,70vh)] min-h-[420px] flex-col rounded-2xl border border-line bg-white">
         <div ref={endRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-4" aria-live="polite">
+          {aviso && (
+            <div className="flex justify-start">
+              <p className="max-w-[85%] rounded-2xl bg-soft px-4 py-2.5 text-sm whitespace-pre-wrap">
+                <ComLinks text={aviso} />
+              </p>
+            </div>
+          )}
           {visiveis.length === 0 && (
             <div className="text-sm text-muted">
               <p>Exemplos do que você pode pedir:</p>
@@ -114,7 +156,7 @@ export default function Chat() {
                   m.role === "user" ? "bg-brand text-white" : "bg-soft"
                 }`}
               >
-                {m.text}
+                <ComLinks text={m.text} />
               </p>
             </div>
           ))}

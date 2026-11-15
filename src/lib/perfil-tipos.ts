@@ -90,6 +90,7 @@ export type Perfil = {
   dia_todo?: boolean; // 24 horas: avisa de pessoa a qualquer hora, todos os dias (ignora início/fim/dias)
   dias: string[];
   contato_nome: string;
+  empresa?: string; // nome que aparece no robô do Telegram: "Live.On - <empresa>"
   contato_whatsapp: string;
   salvo_em?: string;
 };

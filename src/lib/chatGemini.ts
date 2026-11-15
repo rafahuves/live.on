@@ -40,6 +40,7 @@ export async function chatGemini(
   userId: string,
   system: string,
   history: Msg[],
+  aposSalvar: (id: string) => Promise<string> = async (id) => `Análise salva com id ${id}.`,
 ): Promise<{ messages: Msg[]; saved: Analise[] } | null> {
   const contents: GeminiContent[] = history
     .map((m) => ({ role: m.role === "assistant" ? ("model" as const) : ("user" as const), parts: [{ text: texto(m) }] }))
@@ -70,7 +71,7 @@ export async function chatGemini(
       }
       const nova = await addAnalise(userId, valido);
       saved.push(nova);
-      respostas.push({ functionResponse: { name: "salvar_analise", response: { resultado: `Análise salva com id ${nova.id}.` } } });
+      respostas.push({ functionResponse: { name: "salvar_analise", response: { resultado: await aposSalvar(nova.id) } } });
     }
     contents.push({ role: "user", parts: respostas });
   }

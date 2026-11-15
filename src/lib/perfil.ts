@@ -36,6 +36,7 @@ export function validarPerfil(x: unknown, canais: number[]): Perfil | string {
   if (p.dia_todo !== undefined && typeof p.dia_todo !== "boolean") return "Opção 24 horas inválida.";
   if (!Array.isArray(p.dias) || !p.dias.every((d) => DIAS.includes(d as (typeof DIAS)[number]))) return "Dias inválidos.";
   if (typeof p.contato_nome !== "string" || typeof p.contato_whatsapp !== "string") return "Contato inválido.";
+  if (p.empresa !== undefined && (typeof p.empresa !== "string" || p.empresa.length > 50)) return "Nome da empresa muito longo.";
   const zap = p.contato_whatsapp.replace(/\D/g, "");
   if (zap && (zap.length < 10 || zap.length > 13)) return "WhatsApp inválido (DDD + número).";
   if (!Array.isArray(p.cameras)) return "Câmeras inválidas.";

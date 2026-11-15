@@ -83,9 +83,53 @@ export async function sendPhoto(chatId: number, jpg: ArrayBuffer, caption: strin
 /** Envia um alerta para a conta (foto opcional). Usado pelo teste e, depois, pelo detector. */
 export async function enviarAlerta(userId: string, texto: string, foto?: ArrayBuffer | null): Promise<boolean> {
   if (!telegramConfigured()) return false;
-  const link = await loadLink(userId);
+  const link = (await loadLink(userId)) ?? (await verifyLink(userId).catch(() => null));
   if (!link) return false;
   if (foto) await sendPhoto(link.chat_id, foto, texto);
   else await sendText(link.chat_id, texto);
   return true;
+}
+
+// ---- Nome do robô por empresa e situação da conta ----
+
+/** Nome que aparece no Telegram: "Live.On - VS Transporte". */
+export const nomeDoRobo = (empresa: string | null | undefined) =>
+  empresa?.trim() ? `Live.On - ${empresa.trim()}`.slice(0, 64) : "Live.On Alertas";
+
+let nomeAtual: string | null = null;
+/** Põe o nome da empresa no robô (só chama o Telegram quando muda). Fase de teste: 1 robô = 1 empresa. */
+export async function ajustarNomeDoRobo(empresa: string | null | undefined) {
+  const nome = nomeDoRobo(empresa);
+  if (nomeAtual === nome) return;
+  try {
+    nomeAtual ??= (await call<{ name: string }>("getMyName")).name;
+    if (nomeAtual !== nome) {
+      await call("setMyName", { name: nome });
+      nomeAtual = nome;
+    }
+  } catch {
+    // Telegram limita trocas de nome; tenta de novo numa próxima vez.
+  }
+}
+
+export type TelegramStatus = { configurado: boolean; bot?: string; nomeRobo?: string; url?: string; conectado?: boolean; nome?: string | null; erro?: string };
+
+/** Situação do Telegram da conta. Se ainda não está ligado, confere se a pessoa já tocou em "Começar". */
+export async function telegramStatus(userId: string, empresa: string | null | undefined): Promise<TelegramStatus> {
+  if (!telegramConfigured()) return { configurado: false };
+  try {
+    await ajustarNomeDoRobo(empresa);
+    const bot = await botUsername();
+    const link = (await loadLink(userId)) ?? (await verifyLink(userId).catch(() => null));
+    return {
+      configurado: true,
+      bot,
+      nomeRobo: nomeDoRobo(empresa),
+      url: `https://t.me/${bot}?start=${linkCode(userId)}`,
+      conectado: !!link,
+      nome: link?.nome ?? null,
+    };
+  } catch {
+    return { configurado: true, erro: "Não consegui falar com o Telegram. Confira o token do robô." };
+  }
 }

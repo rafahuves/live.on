@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import AppHeader from "@/components/AppHeader";
 import Chat from "./Chat";
@@ -22,7 +23,9 @@ export default function AnalisesPage() {
           </span>
           <span className="font-semibold text-brand">Abrir →</span>
         </Link>
-        <Chat />
+        <Suspense fallback={<p className="mt-8 text-muted">Carregando…</p>}>
+          <Chat />
+        </Suspense>
       </main>
     </div>
   );
