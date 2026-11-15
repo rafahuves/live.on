@@ -4,7 +4,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { DIAS, TIPOS, TIPO_LABEL, addAnalise, listAnalises, validarAnalise } from "@/lib/analises";
 import { getCurrentUser } from "@/lib/supabase/server";
-import { loadDvr } from "@/lib/dvr";
+import { activeChannels, loadDvr } from "@/lib/dvr";
+import { loadPerfil } from "@/lib/perfil";
 
 const client = new Anthropic();
 const MODEL = "claude-opus-5-5";
@@ -48,6 +49,7 @@ Tipos de análise que o sistema sabe fazer:
 ${tipos}
 
 Câmeras do cliente: ${cameras.length ? cameras.join(", ") : "nenhuma detectada agora (aceite os nomes cam1, cam2... que o cliente disser)"}.
+Na ferramenta, use só o código da câmera (ex.: "cam7"), sem o nome entre parênteses.
 
 Como conduzir:
 1. Descubra o necessário: qual câmera, qual porta ou área da imagem, horários e dias, e o limite (ex.: mais de 5 vezes por dia). Pergunte uma ou duas coisas por vez.
@@ -61,10 +63,15 @@ Limites que você deve explicar com gentileza quando aparecerem:
 Se o pedido não couber em nenhum tipo, diga o que é possível hoje e ofereça a alternativa mais próxima.`;
 }
 
-// Câmeras da conta, com nomes simples (cam1, cam2...) para a IA.
+// Câmeras da conta (só canais com câmera), com o nome dado na configuração: "cam7 (Portão)".
 async function cameraNames(userId: string): Promise<string[]> {
   const dvr = await loadDvr(userId);
-  return dvr ? Array.from({ length: dvr.channels }, (_, i) => `cam${i + 1}`) : [];
+  if (!dvr) return [];
+  const perfil = await loadPerfil(userId);
+  return activeChannels(dvr).map((ch) => {
+    const nome = perfil?.cameras.find((c) => c.ch === ch)?.nome;
+    return nome && nome !== `Câmera ${ch}` ? `cam${ch} (${nome})` : `cam${ch}`;
+  });
 }
 
 export async function POST(request: Request) {

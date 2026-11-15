@@ -31,6 +31,14 @@ export async function addAnalise(userId: string, input: AnaliseInput): Promise<A
   return nova;
 }
 
+// Troca as análises criadas pela configuração inicial (mantém as que o cliente fez no chat).
+export async function replaceConfigAnalises(userId: string, inputs: AnaliseInput[]) {
+  const keep = (await listAnalises(userId)).filter((a) => a.origem !== "configuracao");
+  const criadas = new Date().toISOString();
+  const novas: Analise[] = inputs.map((i) => ({ ...i, id: crypto.randomUUID(), criada_em: criadas, ativa: true, origem: "configuracao" }));
+  await saveAll(userId, [...keep, ...novas]);
+}
+
 export async function removeAnalise(userId: string, id: string): Promise<boolean> {
   const list = await listAnalises(userId);
   const next = list.filter((a) => a.id !== id);

@@ -33,4 +33,5 @@ export type AnaliseInput = {
   mensagem_alerta: string;
 };
 
-export type Analise = AnaliseInput & { id: string; criada_em: string; ativa: boolean };
+// origem "configuracao" = criada pela tela de configuração inicial (é refeita quando ela é salva de novo).
+export type Analise = AnaliseInput & { id: string; criada_em: string; ativa: boolean; origem?: "configuracao" | "chat" };

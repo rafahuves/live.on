@@ -1,3 +1,4 @@
+import Link from "next/link";
 import AppHeader from "@/components/AppHeader";
 import Chat from "./Chat";
 
@@ -12,6 +13,15 @@ export default function AnalisesPage() {
         <p className="mt-1 max-w-2xl text-muted">
           Conte para a IA o que você quer vigiar, do seu jeito. Ela faz as perguntas que faltarem e monta a análise.
         </p>
+        <Link
+          href="/configurar"
+          className="mt-5 flex items-center justify-between gap-3 rounded-2xl border border-line p-4 hover:border-brand"
+        >
+          <span className="text-sm">
+            <b>Configuração rápida:</b> escolher, câmera por câmera, o que analisar (com a foto de cada uma).
+          </span>
+          <span className="font-semibold text-brand">Abrir →</span>
+        </Link>
         <Chat />
       </main>
     </div>
