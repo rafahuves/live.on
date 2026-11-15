@@ -29,6 +29,13 @@ porta da câmara fria aberta, posto de trabalho vazio, etc.
 - Identidade visual: branco + roxo `#7C3AED`, fontes Inter / Inter Tight / IBM Plex Mono.
 - Removido em 2026-11-14: protótipo `/camera` (webcam + TensorFlow.js). Não recriar sem pedido.
 
+## Plano
+- Roteiro completo em `docs/PLANO.md` (fases, arquitetura, decisões). Ler antes de começar trabalho novo.
+- Arquitetura alvo: câmeras Intelbras → RTSP → caixinha no cliente (Python + YOLO + regras)
+  → Supabase → alerta no celular (Telegram/ntfy) + painel no site Next.js.
+- MiroFish: `~/MiroFish` configurado para Gemini grátis, mas sem chaves (usuário desistiu). Não insistir.
+  Semente pronta em `docs/mirofish/seed-liveon.md`.
+
 ## Pontos em aberto
 - Como conectar às câmeras reais (RTSP/NVR Intelbras) e onde roda a IA.
 - Canal de alerta definitivo (WhatsApp, push, ntfy...).
