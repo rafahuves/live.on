@@ -44,3 +44,8 @@ next-env.d.ts
 /bin/
 !.env.example
 /data/
+
+# Python do detector (YOLO)
+/.venv-detector/
+__pycache__/
+*.pt

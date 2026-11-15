@@ -6,7 +6,7 @@ import { getCurrentUser } from "@/lib/supabase/server";
 import { activeChannels, loadDvr } from "@/lib/dvr";
 import { replaceConfigAnalises } from "@/lib/analises";
 import { analisesDoPerfil, savePerfil, validarPerfil } from "@/lib/perfil";
-import { ajustarNomeDoRobo, telegramConfigured } from "@/lib/telegram";
+import { ajustarNomeDoRobo, registrarCodigo, telegramConfigured } from "@/lib/telegram";
 
 export async function salvarConfiguracao(perfil: unknown): Promise<{ error: string }> {
   const user = await getCurrentUser();
@@ -17,7 +17,10 @@ export async function salvarConfiguracao(perfil: unknown): Promise<{ error: stri
   if (typeof ok === "string") return { error: ok };
   await savePerfil(user.id, ok);
   await replaceConfigAnalises(user.id, analisesDoPerfil(ok));
-  if (telegramConfigured()) await ajustarNomeDoRobo(ok.empresa || user.company);
+  if (telegramConfigured()) {
+    await ajustarNomeDoRobo(ok.empresa || user.company);
+    await registrarCodigo(user.id, ok.empresa || user.company, user.name);
+  }
   revalidatePath("/analises");
   revalidatePath("/cameras");
   redirect("/analises?configurado=1");

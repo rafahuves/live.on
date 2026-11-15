@@ -9,7 +9,7 @@ export async function GET() {
   const user = await getCurrentUser();
   if (!user) return Response.json({ error: "Faça login de novo." }, { status: 401 });
   const perfil = await loadPerfil(user.id);
-  return Response.json(await telegramStatus(user.id, perfil?.empresa || user.company));
+  return Response.json(await telegramStatus(user.id, perfil?.empresa || user.company, user.name));
 }
 
 export async function POST(request: Request) {

@@ -1,15 +1,16 @@
-// Alertas pelo Telegram (fase de testes). O bot é criado pelo dono no @BotFather e o token vai em
-// TELEGRAM_BOT_TOKEN no .env.local. Para ligar uma conta: a pessoa abre t.me/<bot>?start=<código> e toca em
-// "Começar"; o site acha essa mensagem (getUpdates) e guarda o chat em data/telegram/<id>.json (fora do Git).
+// Telegram (fase de testes): alertas com foto e chat oficial com o assistente. O robô é criado no @BotFather e o
+// token vai em TELEGRAM_BOT_TOKEN no .env.local. Para ligar uma conta: a pessoa abre t.me/<bot>?start=<código> e
+// toca em "Começar"; o robô (src/lib/telegramBot.ts, sempre ouvindo) recebe isso e guarda o chat em
+// data/telegram/<id>.json (fora do Git). Os códigos ficam em data/telegram/codigos.json.
 import { createHmac } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const API = "https://api.telegram.org";
 
 export const telegramConfigured = () => /^\d+:[\w-]{30,}$/.test(process.env.TELEGRAM_BOT_TOKEN ?? "");
 
-async function call<T>(method: string, body?: Record<string, unknown> | FormData): Promise<T> {
+export async function call<T>(method: string, body?: Record<string, unknown> | FormData): Promise<T> {
   const res = await fetch(`${API}/bot${process.env.TELEGRAM_BOT_TOKEN}/${method}`, {
     method: "POST",
     ...(body instanceof FormData
@@ -53,23 +54,62 @@ export async function removeLink(userId: string) {
   await rm(fileFor(userId), { force: true });
 }
 
-/** Procura o "/start <código>" da pessoa nas mensagens recentes do bot e liga a conta. */
-export async function verifyLink(userId: string): Promise<Link | null> {
+const DIR = () => path.join(process.cwd(), "data", "telegram");
+const CODIGOS = () => path.join(DIR(), "codigos.json");
+export type Codigo = { userId: string; empresa: string | null; nome: string | null };
+
+async function lerCodigos(): Promise<Record<string, Codigo>> {
+  try {
+    return JSON.parse(await readFile(CODIGOS(), "utf8")) as Record<string, Codigo>;
+  } catch {
+    return {};
+  }
+}
+
+/** Guarda quem é o dono de cada código de ligação (para o robô saber quem tocou em "Começar"). */
+export async function registrarCodigo(userId: string, empresa: string | null | undefined, nome: string | null | undefined) {
+  const codigos = await lerCodigos();
   const code = linkCode(userId);
-  type Update = { message?: { text?: string; chat: { id: number; first_name?: string; username?: string } } };
-  const updates = await call<Update[]>("getUpdates", { allowed_updates: ["message"] });
-  const msg = updates.reverse().find((u) => u.message?.text?.trim() === `/start ${code}`)?.message;
-  if (!msg) return null;
-  const link: Link = { chat_id: msg.chat.id, nome: msg.chat.first_name ?? msg.chat.username ?? "", ligado_em: new Date().toISOString() };
+  const novo: Codigo = { userId, empresa: empresa?.trim() || null, nome: nome?.trim() || null };
+  if (JSON.stringify(codigos[code]) === JSON.stringify(novo)) return;
+  codigos[code] = novo;
+  await mkdir(DIR(), { recursive: true });
+  await writeFile(CODIGOS(), JSON.stringify(codigos, null, 2));
+}
+
+export async function donoDoCodigo(code: string): Promise<Codigo | null> {
+  return (await lerCodigos())[code] ?? null;
+}
+
+/** Liga um chat do Telegram a uma conta (chamado pelo robô ao receber "/start <código>"). */
+export async function salvarLink(userId: string, chatId: number, nome: string): Promise<Link> {
+  const link: Link = { chat_id: chatId, nome, ligado_em: new Date().toISOString() };
   const file = fileFor(userId);
   await mkdir(path.dirname(file), { recursive: true });
   await writeFile(file, JSON.stringify(link, null, 2));
-  await sendText(link.chat_id, "✅ Pronto! Os alertas do Live.On vão chegar aqui.").catch(() => {});
   return link;
 }
 
-export async function sendText(chatId: number, text: string) {
-  await call("sendMessage", { chat_id: chatId, text });
+/** Qual conta está ligada a este chat do Telegram (null = ninguém). */
+export async function contaDoChat(chatId: number): Promise<string | null> {
+  const arquivos = await readdir(DIR()).catch(() => [] as string[]);
+  for (const f of arquivos) {
+    const m = /^([0-9a-f-]{36})\.json$/i.exec(f);
+    if (m && (await loadLink(m[1]))?.chat_id === chatId) return m[1];
+  }
+  return null;
+}
+
+/** Já ligado? (quem liga é o robô quando a pessoa toca em "Começar"). */
+export async function verifyLink(userId: string): Promise<Link | null> {
+  return loadLink(userId);
+}
+
+export async function sendText(chatId: number, text: string, html = false) {
+  // O Telegram aceita até 4096 caracteres por mensagem.
+  for (let i = 0; i < text.length; i += 4000) {
+    await call("sendMessage", { chat_id: chatId, text: text.slice(i, i + 4000), ...(html ? { parse_mode: "HTML" } : {}) });
+  }
 }
 
 export async function sendPhoto(chatId: number, jpg: ArrayBuffer, caption: string) {
@@ -115,12 +155,17 @@ export async function ajustarNomeDoRobo(empresa: string | null | undefined) {
 export type TelegramStatus = { configurado: boolean; bot?: string; nomeRobo?: string; url?: string; conectado?: boolean; nome?: string | null; erro?: string };
 
 /** Situação do Telegram da conta. Se ainda não está ligado, confere se a pessoa já tocou em "Começar". */
-export async function telegramStatus(userId: string, empresa: string | null | undefined): Promise<TelegramStatus> {
+export async function telegramStatus(
+  userId: string,
+  empresa: string | null | undefined,
+  nome?: string | null,
+): Promise<TelegramStatus> {
   if (!telegramConfigured()) return { configurado: false };
   try {
+    await registrarCodigo(userId, empresa, nome);
     await ajustarNomeDoRobo(empresa);
     const bot = await botUsername();
-    const link = (await loadLink(userId)) ?? (await verifyLink(userId).catch(() => null));
+    const link = await loadLink(userId);
     return {
       configurado: true,
       bot,
@@ -132,4 +177,11 @@ export async function telegramStatus(userId: string, empresa: string | null | un
   } catch {
     return { configurado: true, erro: "Não consegui falar com o Telegram. Confira o token do robô." };
   }
+}
+
+/** Texto curto da situação do Telegram, para as instruções da IA e para o resultado de salvar_analise. */
+export function telegramTexto(t: TelegramStatus) {
+  if (!t.configurado || t.erro) return "o robô do Telegram ainda não está configurado neste computador.";
+  if (t.conectado) return `conectado (${t.nome || "cliente"}). Os alertas já vão chegar no robô "${t.nomeRobo}".`;
+  return `NÃO conectado. Mande este link para o cliente e diga para tocar em "Começar" no robô "${t.nomeRobo}": ${t.url}`;
 }
