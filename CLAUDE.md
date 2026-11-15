@@ -47,8 +47,13 @@ quando algo importante acontece (ex.: pessoa fora do horário, câmera tampada).
 - **Ver as câmeras de longe (demo, 2026-11-15):** `scripts/ligar-online.sh` (atalho com dois cliques em
   `~/Desktop/Live.On/Ligar Live.On (almoço).command`) liga go2rtc + `next start -p 3001` + túnel Cloudflare
   (`cloudflared`, link `https://….trycloudflare.com`, muda a cada vez; salvo em `data/logs/LINK.txt`) + `caffeinate`.
-  Fora do localhost o `CameraGrid` usa `/api/cam?src=` (MJPEG via ffmpeg, só a dona da conta; go2rtc segue em 127.0.0.1).
+  O `CameraGrid` sempre usa `/api/cam?src=` (MJPEG via ffmpeg, só a dona da conta; go2rtc segue em 127.0.0.1).
   O Mac precisa ficar ligado, na tomada, tampa aberta e no Wi-Fi do gravador.
+- **REGRA: o Live.On NUNCA pode sobrecarregar/travar o gravador do cliente** (em 2026-11-15 um DVR Intelbras travou
+  depois de 16 câmeras abertas de uma vez). Todo vídeo passa por `/api/cam` + `src/lib/dvrGuard.ts`: no máximo
+  `LIVEON_MAX_CAMS` (padrão 4) câmeras ao vivo por conta, teste leve (RTSP OPTIONS) antes de abrir, e pausa crescente
+  (30 s → 10 min) quando o gravador não responde. A tela (`CameraGrid`) liga uma câmera por vez e não tenta de novo
+  sozinha; o HD pausa a grade. Não criar caminho de vídeo que pule essas travas.
 - **Análises personalizadas** (`/analises`): chat com a Claude (`claude-opus-5-5`, effort low, `fallbacks: "default"`) em
   `src/app/api/chat/route.ts`; a ferramenta `salvar_analise` (strict) grava em `data/analises/<id da conta>.json` (local, fora do Git).
   O cliente guarda o histórico completo e só acrescenta (não editar mensagens antigas: quebra os blocos de thinking).

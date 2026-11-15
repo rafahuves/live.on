@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
 import { getCurrentUser } from "@/lib/supabase/server";
 import { ensureStreams, go2rtcOnline, loadDvr } from "@/lib/dvr";
+import { MAX_LIVE } from "@/lib/dvrGuard";
 import CameraGrid from "./CameraGrid";
 import ConnectDvr from "./ConnectDvr";
 import { disconnectDvr } from "./actions";
@@ -15,7 +16,7 @@ export default function CamerasPage() {
       <AppHeader active="cameras" />
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-10">
         <h1 className="font-display text-3xl font-bold tracking-tight">Minhas câmeras</h1>
-        <p className="mt-1 text-muted">Ao vivo, direto do seu gravador. Fase de teste: funciona no computador da mesma rede.</p>
+        <p className="mt-1 text-muted">Ao vivo, direto do seu gravador.</p>
         <div className="mt-8">
           <Suspense fallback={<p className="text-muted">Carregando…</p>}>
             <Cameras />
@@ -56,7 +57,7 @@ async function Cameras() {
           <button className="font-semibold text-brand hover:underline">Trocar gravador</button>
         </form>
       </div>
-      <CameraGrid cams={names} />
+      <CameraGrid cams={names} max={MAX_LIVE} />
     </>
   );
 }

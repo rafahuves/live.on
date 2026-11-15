@@ -1,43 +1,128 @@
 import { getCurrentUser } from "@/lib/supabase/server";
-import { streamPrefix } from "@/lib/dvr";
+import { loadDvr, streamPrefix } from "@/lib/dvr";
+import { acquire, dvrHealthy, liveCount, MAX_LIVE, pausedFor, reportFailure, reportSuccess } from "@/lib/dvrGuard";
 
-// Vídeo ao vivo de uma câmera em MJPEG, para quem abre o site de fora do computador do go2rtc
-// (ex.: celular pelo link público). Só a dona da conta vê as próprias câmeras; o go2rtc continua
-// fechado em 127.0.0.1 e nunca fica exposto direto.
+// Vídeo ao vivo de uma câmera em MJPEG. TODO vídeo passa por aqui, e aqui ficam as travas que
+// protegem o gravador do cliente (src/lib/dvrGuard.ts): limite de câmeras ao mesmo tempo, teste leve
+// antes de abrir, e pausa automática quando o gravador não responde. Só a dona da conta vê as próprias
+// câmeras; o go2rtc continua fechado em 127.0.0.1.
 const GO2RTC = "http://127.0.0.1:1984";
+const FIRST_FRAME_MS = 12_000;
+
+function fail(status: number, msg: string, retry?: number) {
+  const headers: Record<string, string> = { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" };
+  if (retry) headers["Retry-After"] = String(retry);
+  return new Response(msg, { status, headers });
+}
 
 export async function GET(request: Request) {
   const user = await getCurrentUser();
-  if (!user) return new Response("Faça login de novo.", { status: 401 });
+  if (!user) return fail(401, "Faça login de novo.");
 
-  const src = new URL(request.url).searchParams.get("src") ?? "";
-  const prefix = streamPrefix(user.id);
-  if (!src.startsWith(prefix) || !/^[a-z0-9_]+$/i.test(src)) {
-    return new Response("Câmera não encontrada.", { status: 404 });
+  const params = new URL(request.url).searchParams;
+
+  // Situação atual, para a tela explicar por que uma câmera não abriu.
+  if (params.has("status")) {
+    return Response.json(
+      { live: liveCount(user.id), max: MAX_LIVE, pausedFor: pausedFor(user.id) },
+      { headers: { "Cache-Control": "no-store" } },
+    );
   }
 
-  // O gravador manda H.264; o celular recebe MJPEG. Um stream extra no go2rtc faz a conversão (ffmpeg),
-  // menor no normal (640) e maior no HD (1280). Criado só na memória do go2rtc, na primeira vez.
-  const mjpeg = `${src}_mjpeg`;
-  const width = src.endsWith("_hd") ? 1280 : 640;
-  let upstream: Response;
+  const src = params.get("src") ?? "";
+  if (!src.startsWith(streamPrefix(user.id)) || !/^[a-z0-9_]+$/i.test(src)) return fail(404, "Câmera não encontrada.");
+
+  // Trava 3: gravador em pausa depois de falhar.
+  const wait = pausedFor(user.id);
+  if (wait > 0) return fail(503, `O gravador não respondeu. Nova tentativa em ${wait} s.`, wait);
+
+  // Trava 1: limite de câmeras ao vivo ao mesmo tempo.
+  const release = acquire(user.id, src);
+  if (!release) return fail(429, `Limite de ${MAX_LIVE} câmeras ao vivo ao mesmo tempo.`, 5);
+
   try {
+    // Trava 2: teste leve antes de pedir vídeo.
+    const dvr = await loadDvr(user.id);
+    if (!dvr) {
+      release();
+      return fail(404, "Nenhum gravador conectado.");
+    }
+    if (!(await dvrHealthy(user.id, dvr.host, dvr.port))) {
+      release();
+      return fail(503, "O gravador não respondeu. O Live.On vai esperar antes de tentar de novo.", pausedFor(user.id));
+    }
+
+    // O gravador manda H.264; o navegador recebe MJPEG (conversão no go2rtc com ffmpeg).
+    const mjpeg = `${src}_mjpeg`;
+    const width = src.endsWith("_hd") ? 1280 : 640;
     const q = new URLSearchParams({ name: mjpeg, src: `ffmpeg:${src}#video=mjpeg#width=${width}` });
     await fetch(`${GO2RTC}/api/streams?${q}`, { method: "PUT", signal: AbortSignal.timeout(2000) });
-    upstream = await fetch(`${GO2RTC}/api/stream.mjpeg?src=${encodeURIComponent(mjpeg)}`, {
+
+    const ctrl = new AbortController();
+    request.signal.addEventListener("abort", () => ctrl.abort());
+    const upstream = await fetch(`${GO2RTC}/api/stream.mjpeg?src=${encodeURIComponent(mjpeg)}`, {
       cache: "no-store",
-      signal: request.signal,
+      signal: ctrl.signal,
+    });
+    if (!upstream.ok || !upstream.body) {
+      ctrl.abort();
+      release();
+      reportFailure(user.id);
+      return fail(502, "Câmera sem imagem.");
+    }
+
+    // Espera a primeira imagem. Sem imagem a tempo = falha, e o Live.On entra em pausa.
+    const reader = upstream.body.getReader();
+    const timer = setTimeout(() => ctrl.abort(), FIRST_FRAME_MS);
+    let first: ReadableStreamReadResult<Uint8Array>;
+    try {
+      first = await reader.read();
+    } catch {
+      first = { done: true, value: undefined };
+    } finally {
+      clearTimeout(timer);
+    }
+    if (first.done) {
+      ctrl.abort();
+      release();
+      reportFailure(user.id);
+      return fail(502, "Câmera sem imagem.");
+    }
+    reportSuccess(user.id);
+
+    // Repassa o vídeo e libera a vaga quando a pessoa fecha a câmera ou a conexão cai.
+    request.signal.addEventListener("abort", release);
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(first.value);
+      },
+      async pull(c) {
+        try {
+          const { done, value } = await reader.read();
+          if (done) {
+            release();
+            c.close();
+          } else c.enqueue(value);
+        } catch (e) {
+          release();
+          c.error(e);
+        }
+      },
+      cancel() {
+        release();
+        ctrl.abort();
+      },
+    });
+
+    return new Response(body, {
+      headers: {
+        "Content-Type": upstream.headers.get("content-type") ?? "multipart/x-mixed-replace; boundary=frame",
+        "Cache-Control": "no-store, no-transform",
+        "X-Accel-Buffering": "no",
+      },
     });
   } catch {
-    return new Response("O conversor de vídeo está desligado.", { status: 503 });
+    release();
+    return fail(503, "O conversor de vídeo está desligado.");
   }
-  if (!upstream.ok || !upstream.body) return new Response("Câmera sem imagem.", { status: 502 });
-
-  return new Response(upstream.body, {
-    headers: {
-      "Content-Type": upstream.headers.get("content-type") ?? "multipart/x-mixed-replace; boundary=frame",
-      "Cache-Control": "no-store, no-transform",
-      "X-Accel-Buffering": "no",
-    },
-  });
 }
