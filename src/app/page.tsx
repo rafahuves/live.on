@@ -1,8 +1,8 @@
 import Link from "next/link";
 import SimEmbed from "@/components/SimEmbed";
 
-// TODO: trocar pelo link real de contato (WhatsApp, formulário ou e-mail).
-const CONTACT_URL = "#contato";
+// Botões "Testar grátis" levam ao cadastro.
+const CONTACT_URL = "/criar-conta";
 
 const STEPS = [
   {
@@ -89,6 +89,7 @@ export default function Home() {
             <a href="#demonstracao" className="hover:text-brand">Demonstração</a>
             <a href="#preco" className="hover:text-brand">Preço</a>
             <a href="#duvidas" className="hover:text-brand">Dúvidas</a>
+            <Link href="/entrar" className="hover:text-brand">Entrar</Link>
           </nav>
           <a
             href={CONTACT_URL}
@@ -219,12 +220,15 @@ export default function Home() {
               <p className="mt-2 text-sm text-muted">
                 Conecte suas câmeras e veja a Live.On funcionando antes de pagar qualquer coisa.
               </p>
-              <a
-                href={CONTACT_URL}
+              <Link
+                href="/criar-conta"
                 className="mt-auto rounded-full bg-brand px-4 py-2 text-center text-sm font-semibold text-white hover:bg-brand-dark"
               >
-                Quero testar grátis
-              </a>
+                Criar conta grátis
+              </Link>
+              <Link href="/entrar" className="mt-3 text-center text-sm font-semibold text-brand hover:underline">
+                Já tenho conta? Entrar
+              </Link>
             </div>
           </div>
         </section>

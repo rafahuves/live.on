@@ -830,8 +830,12 @@ requestAnimationFrame(frame);
 </script>
 
 <script>
-fetch("/api/ip",{cache:"no-store"}).then(r=>r.json()).then(d=>{
-  document.getElementById("userIp").textContent=d.ip+(d.local?" (local)":"");
+fetch("/api/ip",{cache:"no-store"}).then(r=>r.json()).then(async d=>{
+  const el=document.getElementById("userIp");
+  if(!d.local){el.textContent=d.ip;return;}
+  // No localhost o servidor só vê "::1". Pergunta o IP de internet a um serviço público.
+  try{const p=await fetch("https://api.ipify.org?format=json",{cache:"no-store"}).then(r=>r.json());el.textContent=p.ip+" (local)";}
+  catch{el.textContent=d.ip+" (local)";}
 }).catch(()=>{document.getElementById("userIp").textContent="indisponível";});
 </script>
 <script>

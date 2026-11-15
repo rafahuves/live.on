@@ -35,6 +35,20 @@ quando algo importante acontece (ex.: pessoa fora do horário, câmera tampada).
 - Faixa roxa **fixa no topo** com "IP do Usuário: …" em todas as páginas: `src/components/IpBar.tsx`
   (no `layout.tsx`) e `.ipbar` no `simulacoes.html` (escondida no modo mini). IP vem de
   `src/app/api/ip/route.ts` (x-forwarded-for/x-real-ip). Pedido do usuário: não pode sair da tela.
+- **Contas (Supabase Auth):** `/entrar` e `/criar-conta` com Google, Microsoft (`azure`), GitHub e e-mail/senha;
+  volta do login em `/auth/callback`. Clientes em `src/lib/supabase/` (`getCurrentUser()` usa `getClaims`); `src/proxy.ts`
+  renova a sessão e protege `/cameras`, `/analises`, `/api/chat`, `/api/analises`. Precisa de `NEXT_PUBLIC_SUPABASE_URL`
+  e `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` no `.env.local` (sem elas o site avisa "contas não ativadas").
+- **Câmeras por conta (fase de teste, só no computador da rede do DVR):** em `/cameras` o cliente informa IP, usuário e
+  senha da Intelbras (botão procura DVR por ONVIF). A senha fica **só neste computador**, AES-256-GCM em `data/dvr/<id>.json`
+  (chave `LIVEON_LOCAL_KEY`; nunca vai ao Supabase). `src/lib/dvr.ts` testa a conexão (imagem vazia = dado errado) e põe as
+  câmeras no **go2rtc** só em memória (`npm run cameras` liga o go2rtc com config inline; o PUT responde 400 "config file
+  disabled" mas adiciona). Nomes `u<12 hex do id>_camN` / `_camN_hd`. RTSP Intelbras `cam/realmonitor?channel=N&subtype=1|0`.
+- **Análises personalizadas** (`/analises`): chat com a Claude (`claude-opus-5-5`, effort low, `fallbacks: "default"`) em
+  `src/app/api/chat/route.ts`; a ferramenta `salvar_analise` (strict) grava em `data/analises/<id da conta>.json` (local, fora do Git).
+  O cliente guarda o histórico completo e só acrescenta (não editar mensagens antigas: quebra os blocos de thinking).
+  A IA não identifica pessoas (sem reconhecimento facial) e recusa câmera em banheiro. Precisa de `ANTHROPIC_API_KEY` no `.env.local`.
+  As análises ainda não rodam nas câmeras (falta o detector YOLO).
 - Identidade visual: branco + roxo `#7C3AED`, fontes Inter / Inter Tight / IBM Plex Mono.
 - Removido em 2026-11-14: protótipo `/camera` (webcam + TensorFlow.js). Não recriar sem pedido.
 
