@@ -23,7 +23,7 @@ quando algo importante acontece (ex.: pessoa fora do horário, câmera tampada).
 ## Estado atual (2026-11-14)
 - Pasta: `~/Developer/live.on`. **Nunca** em `~/Documents`/`~/Desktop` (iCloud tira arquivos do disco e quebra o Next/git).
 - Repo: https://github.com/rafahuves/live.on (branch `main`). Push é feito pelo usuário no GitHub Desktop.
-- Página inicial `/` = **landing page** (`src/app/page.tsx`), no modelo novo desde 2026-11-14: hero, como funciona
+- Página inicial `/` = **landing page** (`src/app/page.tsx`; desde 2026-11-16 visual escuro "câmera à noite" com painéis de vidro, estilo em `src/app/landing.css` todo dentro de `.lp`, efeitos em `src/components/LandingFx.tsx`: câmeras simuladas em canvas e o "Como funciona" que se monta ao rolar; seção de pitch "Por que a Live.On"; as outras páginas seguem claras), no modelo novo desde 2026-11-14: hero, como funciona
   (assina → programa acha as câmeras → ao vivo + alertas), demonstração, "para quem já tem câmera"
   (comércio, escritório, condomínio, residência), preço por câmera ("Em breve" + teste grátis), dúvidas, contato.
   O simulador embutido ainda mostra os segmentos antigos (restaurante, logística...). Botões de contato usam `CONTACT_URL` (ainda `#contato`:
