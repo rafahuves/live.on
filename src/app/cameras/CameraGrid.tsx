@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Avisos, Etiquetas, Resumo, useAoVivo } from "./IaAoVivo";
 
 // Dashboard com todas as câmeras, com o mesmo cuidado do app da Intelbras:
 // - liga UMA câmera por vez: a próxima só começa 1,5 s depois que a anterior mostrou imagem;
@@ -8,25 +9,39 @@ import { useEffect, useRef, useState } from "react";
 // - aba escondida por mais de 30 s desliga tudo; ao voltar, religa uma por vez;
 // - o HD (ampliar) é 1 câmera a mais, só enquanto está aberto.
 // Por baixo, o servidor (/api/cam) e o escudo (src/lib/dvrShield.ts) garantem os limites de qualquer jeito.
-const label = (name: string) => `Câmera ${name.replace(/^.*cam/, "")}`;
+const numero = (name: string) => name.replace(/^.*cam/, "");
 const remote = (src: string) => `/api/cam?src=${encodeURIComponent(src)}`;
 const GAP_MS = 1500;
 const HIDDEN_MS = 30_000;
 
 async function motivo(): Promise<string> {
   try {
-    const s = (await (await fetch("/api/cam?status=1", { cache: "no-store" })).json()) as {
+    const s = (await (
+      await fetch("/api/cam?status=1", { cache: "no-store" })
+    ).json()) as {
       live: number;
       max: number;
       pausedFor: number;
     };
-    if (s.pausedFor > 0) return `O gravador não respondeu. Para protegê-lo, o Live.On espera ${s.pausedFor} s antes de tentar de novo.`;
-    if (s.live >= s.max) return "Muitos vídeos abertos ao mesmo tempo (outra aba ou celular?). Feche um e tente de novo.";
+    if (s.pausedFor > 0)
+      return `O gravador não respondeu. Para protegê-lo, o Live.On espera ${s.pausedFor} s antes de tentar de novo.`;
+    if (s.live >= s.max)
+      return "Muitos vídeos abertos ao mesmo tempo (outra aba ou celular?). Feche um e tente de novo.";
   } catch {}
   return "Câmera sem imagem agora.";
 }
 
-export default function CameraGrid({ cams }: { cams: string[] }) {
+export default function CameraGrid({
+  cams,
+  nomes = {},
+}: {
+  cams: string[];
+  nomes?: Record<string, string>;
+}) {
+  // Nome dado na configuração ("Portão"), senão "Câmera 7".
+  const label = (name: string) =>
+    nomes[`cam${numero(name)}`] || `Câmera ${numero(name)}`;
+  const ia = useAoVivo();
   const [playing, setPlaying] = useState<string[]>(() => cams.slice(0, 1));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [open, setOpen] = useState<string | null>(null);
@@ -133,8 +148,12 @@ export default function CameraGrid({ cams }: { cams: string[] }) {
     <>
       {asleep ? (
         <div className="mb-4 rounded-2xl border border-line bg-soft p-4 text-sm">
-          As câmeras foram desligadas porque a página ficou em segundo plano (para poupar o gravador).{" "}
-          <button onClick={wake} className="font-semibold text-brand hover:underline">
+          As câmeras foram desligadas porque a página ficou em segundo plano
+          (para poupar o gravador).{" "}
+          <button
+            onClick={wake}
+            className="font-semibold text-brand hover:underline"
+          >
             Ligar de novo
           </button>
         </div>
@@ -142,52 +161,73 @@ export default function CameraGrid({ cams }: { cams: string[] }) {
         missing > 0 &&
         !starting && (
           <div className="mb-4 text-sm">
-            <button onClick={resume} className="font-semibold text-brand hover:underline">
+            <button
+              onClick={resume}
+              className="font-semibold text-brand hover:underline"
+            >
               Ligar as câmeras que faltam ({missing})
             </button>
           </div>
         )
       )}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-        {cams.map((cam) => {
-          const live = playing.includes(cam) && open !== cam;
-          return (
-            <figure key={cam} className="overflow-hidden rounded-2xl border border-line bg-white">
-              <button
-                onClick={() => setOpen(cam)}
-                className="relative flex aspect-video w-full items-center justify-center bg-black"
-                aria-label={`Ampliar ${label(cam)}`}
+      <Resumo d={ia} total={cams.length} />
+      <div className="grid gap-4 xl:grid-cols-[1fr_320px]">
+        <div className="grid content-start gap-3 sm:grid-cols-2 2xl:grid-cols-3">
+          {cams.map((cam) => {
+            const live = playing.includes(cam) && open !== cam;
+            return (
+              <figure
+                key={cam}
+                className="overflow-hidden rounded-2xl border border-line bg-white"
               >
-                {live ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    alt={label(cam)}
-                    src={remote(cam)}
-                    className="h-full w-full object-contain"
-                    onLoad={() => loaded(cam)}
-                    onError={() => failed(cam)}
-                  />
-                ) : errors[cam] ? (
-                  <span className="px-6 text-center text-sm text-white/80">{errors[cam]}</span>
-                ) : (
-                  <span className="text-sm text-white/50">{open === cam ? "Aberta em HD" : "Na fila…"}</span>
-                )}
-              </button>
-              <figcaption className="flex items-center justify-between px-4 py-2.5 text-sm">
-                <span className="font-semibold">{label(cam)}</span>
-                {errors[cam] ? (
-                  <button onClick={() => retry(cam)} className="font-semibold text-brand hover:underline">
-                    Tentar de novo
-                  </button>
-                ) : (
-                  <button onClick={() => setOpen(cam)} className="font-semibold text-brand hover:underline">
-                    Ampliar (HD)
-                  </button>
-                )}
-              </figcaption>
-            </figure>
-          );
-        })}
+                <button
+                  onClick={() => setOpen(cam)}
+                  className="relative flex aspect-video w-full items-center justify-center bg-black"
+                  aria-label={`Ampliar ${label(cam)}`}
+                >
+                  {live ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      alt={label(cam)}
+                      src={remote(cam)}
+                      className="h-full w-full object-contain"
+                      onLoad={() => loaded(cam)}
+                      onError={() => failed(cam)}
+                    />
+                  ) : errors[cam] ? (
+                    <span className="px-6 text-center text-sm text-white/80">
+                      {errors[cam]}
+                    </span>
+                  ) : (
+                    <span className="text-sm text-white/50">
+                      {open === cam ? "Aberta em HD" : "Na fila…"}
+                    </span>
+                  )}
+                  {live && <Etiquetas cam={ia?.cams[`cam${numero(cam)}`]} />}
+                </button>
+                <figcaption className="flex items-center justify-between px-4 py-2.5 text-sm">
+                  <span className="font-semibold">{label(cam)}</span>
+                  {errors[cam] ? (
+                    <button
+                      onClick={() => retry(cam)}
+                      className="font-semibold text-brand hover:underline"
+                    >
+                      Tentar de novo
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setOpen(cam)}
+                      className="font-semibold text-brand hover:underline"
+                    >
+                      Ampliar (HD)
+                    </button>
+                  )}
+                </figcaption>
+              </figure>
+            );
+          })}
+        </div>
+        <Avisos d={ia} nomes={nomes} />
       </div>
 
       {open && (
@@ -204,8 +244,11 @@ export default function CameraGrid({ cams }: { cams: string[] }) {
               Fechar ✕
             </button>
           </div>
-          <div className="flex min-h-0 flex-1 items-center justify-center" onClick={(e) => e.stopPropagation()}>
-            <HdVideo key={open} cam={open} />
+          <div
+            className="flex min-h-0 flex-1 items-center justify-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <HdVideo key={open} cam={open} nome={label(open)} />
           </div>
         </div>
       )}
@@ -213,13 +256,13 @@ export default function CameraGrid({ cams }: { cams: string[] }) {
   );
 }
 
-function HdVideo({ cam }: { cam: string }) {
+function HdVideo({ cam, nome }: { cam: string; nome: string }) {
   const [erro, setErro] = useState<string | null>(null);
   if (erro) return <p className="max-w-md text-center text-white/80">{erro}</p>;
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      alt={`${label(cam)} em HD`}
+      alt={`${nome} em HD`}
       src={remote(`${cam}_hd`)}
       className="h-full w-full rounded-xl bg-black object-contain"
       onError={async () => setErro(await motivo())}

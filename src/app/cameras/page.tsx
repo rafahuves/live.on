@@ -64,6 +64,10 @@ async function Cameras() {
   const empty = dvr.active ? Array.from({ length: dvr.channels }, (_, i) => i + 1).filter((c) => !dvr.active!.includes(c)) : [];
 
   const names = await ensureStreams(user.id, dvr);
+  const perfilCams = (await loadPerfil(user.id))?.cameras ?? [];
+  const nomesDasCameras = Object.fromEntries(
+    perfilCams.filter((c) => c.nome && c.nome !== `Câmera ${c.ch}`).map((c) => [`cam${c.ch}`, c.nome]),
+  );
   const perfil = await loadPerfil(user.id);
   return (
     <>
@@ -91,7 +95,7 @@ async function Cameras() {
           </form>
         </span>
       </div>
-      <CameraGrid cams={names} />
+      <CameraGrid cams={names} nomes={nomesDasCameras} />
     </>
   );
 }

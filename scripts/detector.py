@@ -42,6 +42,7 @@ PERMANENCIA_SEG = 60       # pessoa parada 1 min (se a análise não disser outr
 SUMIU_SEG = 3              # pessoa some por 3 s = a passagem terminou
 JANELA, MINIMO_NA_JANELA = 5, 3  # pessoa precisa aparecer em 3 das últimas 5 imagens (~3 s)
 CONFIRMA = 0.45            # certeza mínima do modelo preciso para confirmar um alerta
+SO_ANALISES = os.environ.get("DETECTOR_SO_ANALISES") == "1"  # 1 = olha só as câmeras que têm análise
 
 
 def log(*a):
@@ -112,8 +113,10 @@ def contas_e_cameras():
     except Exception:
         return {}
     contas = {}
-    for f in (RAIZ / "data" / "analises").glob("*.json"):
-        uid = f.stem
+    uids = {f.stem for f in (RAIZ / "data" / "dvr").glob("*.json")} | {f.stem for f in (RAIZ / "data" / "analises").glob("*.json")}
+    for uid in sorted(uids):
+        if not re.fullmatch(r"[0-9a-f-]{36}", uid):
+            continue
         prefixo = "u" + uid.replace("-", "")[:12] + "_"
         cams = {}
         for nome in streams:
@@ -182,6 +185,57 @@ def evento(uid, dados):
         f.write(json.dumps({"ts": datetime.now(FUSO).isoformat(timespec="seconds"), **dados}, ensure_ascii=False) + "\n")
 
 
+def _iou(a, b):
+    x1, y1, x2, y2 = max(a[0], b[0]), max(a[1], b[1]), min(a[2], b[2]), min(a[3], b[3])
+    inter = max(0, x2 - x1) * max(0, y2 - y1)
+    uni = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
+    return inter / uni if uni > 0 else 0
+
+
+def rastrear(e, caixas, certezas, t):
+    """Dá um número fixo para cada pessoa: liga cada caixa nova à da imagem anterior que mais se sobrepõe
+    (ou à mais perto). Pessoa que some por mais de 3 s perde o número. Os números recomeçam todo dia."""
+    trilhas = e.setdefault("trilhas", [])
+    dia = datetime.now(FUSO).strftime("%Y%m%d")
+    if e.get("dia") != dia:
+        e["dia"], e["proximo"] = dia, 1
+    livres = [tr for tr in trilhas if t - tr["visto"] <= SUMIU_SEG]
+    usadas = set()
+    for k, b in enumerate(caixas):
+        melhor, nota = None, 0.15
+        cx, cy, lado = (b[0] + b[2]) / 2, (b[1] + b[3]) / 2, max(b[2] - b[0], b[3] - b[1])
+        for j, tr in enumerate(livres):
+            if j in usadas:
+                continue
+            o = tr["b"]
+            iou = _iou(b, o)
+            perto = 1 - min(1, (((o[0] + o[2]) / 2 - cx) ** 2 + ((o[1] + o[3]) / 2 - cy) ** 2) ** 0.5 / (lado * 1.2 + 1))
+            n = max(iou, perto * 0.6)
+            if n > nota:
+                melhor, nota = j, n
+        c = certezas[k] if k < len(certezas) else 0.0
+        if melhor is None:
+            livres.append({"id": e["proximo"], "b": b, "c": c, "visto": t, "desde": t})
+            usadas.add(len(livres) - 1)
+            e["proximo"] += 1
+        else:
+            tr = livres[melhor]
+            tr.update(b=b, c=c, visto=t)
+            usadas.add(melhor)
+    e["trilhas"] = livres
+    return [tr for tr in livres if tr["visto"] == t]
+
+
+def publicar_ao_vivo(ao_vivo):
+    """data/ao-vivo/<conta>.json: o que a IA vê agora em cada câmera (lido pelo dashboard do site)."""
+    pasta = RAIZ / "data" / "ao-vivo"
+    pasta.mkdir(parents=True, exist_ok=True)
+    for uid, cams in ao_vivo.items():
+        tmp = pasta / f"{uid}.json.tmp"
+        tmp.write_text(json.dumps({"ts": int(time.time()), "cams": cams}))
+        tmp.replace(pasta / f"{uid}.json")  # troca de uma vez (o site nunca lê arquivo pela metade)
+
+
 def guardar(uid, cam, imagem, caixas, tipo):
     """Guarda a foto de cada alerta (e dos descartados) em data/alertas/, para conferir depois. Fica 7 dias."""
     from PIL import ImageDraw
@@ -232,6 +286,9 @@ def main():
             contas = contas_e_cameras()
             precisa = set()
             for uid, cams in contas.items():
+                if not SO_ANALISES:
+                    precisa.update(cams.values())  # o dashboard mostra as etiquetas da IA em todas as câmeras
+                    continue
                 for a in analises(uid):
                     alvo = a.get("cameras") or list(cams)
                     precisa.update(cams[c] for c in alvo if c in cams)
@@ -260,18 +317,30 @@ def main():
                 imagens.append(None)
         validas = [i for i, im in enumerate(imagens) if im is not None]
         resultados = {}
+        certezas = {}
         if validas:
             saida = modelo.predict([imagens[i] for i in validas], classes=[0], conf=CONFIANCA, device=aparelho, verbose=False)
             for i, r in zip(validas, saida):
                 resultados[i] = [tuple(map(float, b)) for b in r.boxes.xyxy.tolist()]
+                certezas[i] = [float(c) for c in r.boxes.conf.tolist()]
 
         agora = datetime.now(FUSO)
         t = time.time()
+        ao_vivo = {}
         for i, (uid, cam, jpg) in enumerate(lote):
             if imagens[i] is None:
                 continue
             caixas = resultados.get(i, [])
             e = estado.setdefault((uid, cam), {"pessoas": False, "desde": t, "visto": 0.0, "liso_desde": None, "hist": []})
+
+            # Número fixo para cada pessoa enquanto ela está na imagem + estado ao vivo para o dashboard.
+            larg, alt = imagens[i].size
+            pessoas = rastrear(e, caixas, certezas.get(i, []), t)
+            ao_vivo.setdefault(uid, {})[cam] = {
+                "n": len(pessoas),
+                "pessoas": [{"id": p["id"], "b": [round(p["b"][0] / larg, 4), round(p["b"][1] / alt, 4), round(p["b"][2] / larg, 4), round(p["b"][3] / alt, 4)], "c": round(p["c"], 2), "desde": int(p["desde"])} for p in pessoas],
+                "w": larg, "h": alt, "ts": int(t),
+            }
 
             # Contra alarme falso: só conta "tem pessoa" se ela aparece em pelo menos 3 das últimas 5 imagens
             # (uns 3 s). Uma sombra, a manta no sofá ou o reflexo do infravermelho por 1 imagem não contam.
@@ -360,6 +429,8 @@ def main():
             for a in disparadas:
                 evento(uid, {"cam": cam, "tipo": "alerta", "analise": a.get("nome"), "enviado": ok})
             log(f"alerta {'enviado' if ok else 'NÃO enviado'}: {', '.join(a.get('nome', '') for a in disparadas)} · {nome}")
+
+        publicar_ao_vivo(ao_vivo)
 
         # Câmera sem imagem há muito tempo = sem sinal (avisa as análises de câmera tampada/sem sinal).
         for uid, cams in contas.items():

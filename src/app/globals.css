@@ -38,3 +38,17 @@ body {
     scroll-behavior: auto;
   }
 }
+
+/* Etiquetas da IA sobre o vídeo das câmeras (dashboard), no estilo da simulação. */
+.ia-box { transition: left 0.9s linear, top 0.9s linear, width 0.9s linear, height 0.9s linear; }
+.ia-box i { position: absolute; width: 24%; height: 24%; min-width: 6px; min-height: 6px; border: 0 solid #a78bfa; }
+.ia-box .tl { left: 0; top: 0; border-width: 2px 0 0 2px; }
+.ia-box .tr { right: 0; top: 0; border-width: 2px 2px 0 0; }
+.ia-box .bl { left: 0; bottom: 0; border-width: 0 0 2px 2px; }
+.ia-box .br { right: 0; bottom: 0; border-width: 0 2px 2px 0; }
+.ia-tag {
+  position: absolute; left: 0; bottom: 100%; margin-bottom: 3px; white-space: nowrap;
+  font: 500 10px/1.4 var(--font-plex-mono), ui-monospace, monospace; color: #fff;
+  background: rgba(124, 58, 237, 0.88); padding: 1px 6px; border-radius: 4px;
+}
+@media (prefers-reduced-motion: reduce) { .ia-box { transition: none; } }

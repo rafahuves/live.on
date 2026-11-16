@@ -69,6 +69,10 @@ quando algo importante acontece (ex.: pessoa fora do horário, câmera tampada).
   alerta com print (pessoa marcada) via `POST /api/interno/alerta` (só 127.0.0.1 + `LIVEON_LOCAL_KEY`) → Telegram.
   1 alerta/5 min por análise e câmera. Eventos em `data/eventos/<id>.jsonl` (ferramenta `relatorio`). Só 1 detector
   por vez (lock). O escudo e as câmeras sobem no início do servidor (`src/instrumentation.ts`).
+- **IA ao vivo no dashboard (2026-11-16):** o detector olha TODAS as câmeras da conta (`DETECTOR_SO_ANALISES=1` limita às
+  que têm análise), dá número fixo por pessoa (rastreamento por sobreposição, `rastrear()`) e grava `data/ao-vivo/<id>.json`
+  a cada rodada; `/api/ao-vivo` entrega isso + avisos recentes; `src/app/cameras/IaAoVivo.tsx` desenha as etiquetas
+  ("Pessoa 3 · 92%") sobre o vídeo, o resumo e o painel "Avisos ao vivo". Não abre conexão a mais com o gravador.
 - **Assistente único (`src/lib/assistente.ts`)**: Claude (ANTHROPIC_API_KEY) ou Gemini grátis (GEMINI_API_KEY, testes),
   com ferramentas em `src/lib/ferramentas.ts` (salvar_analise, foto_camera, relatorio, situacao_telegram, alerta_teste,
   nome_da_empresa) e instruções em `src/lib/prompt.ts`. Usado pelo chat do site e pelo robô do Telegram
