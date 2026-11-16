@@ -13,7 +13,7 @@ export default function AppHeader({ active }: { active: "cameras" | "analises" }
     </Link>
   );
   return (
-    <header className="sticky top-7 z-40 border-b border-line bg-white/90 backdrop-blur">
+    <header className="app-header sticky top-7 z-40 border-b border-line bg-white/90 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
         <div className="flex items-center gap-4">
           <Link href="/" className="flex items-center gap-2.5 font-display text-lg font-bold tracking-tight">

@@ -6,6 +6,7 @@ import { getCurrentUser } from "@/lib/supabase/server";
 import { detectActive, ensureStreams, go2rtcOnline, loadDvr, saveDvr } from "@/lib/dvr";
 import { loadPerfil } from "@/lib/perfil";
 import CameraGrid from "./CameraGrid";
+import "../dash.css";
 import ConnectDvr from "./ConnectDvr";
 import { disconnectDvr, rescanChannels } from "./actions";
 
@@ -13,10 +14,14 @@ export const metadata = { title: "Minhas câmeras | Live.On" };
 
 export default function CamerasPage() {
   return (
-    <div className="flex flex-1 flex-col">
+    <div className="dash flex flex-1 flex-col">
+      <div className="d-sky" aria-hidden="true">
+        <div className="d-glow a" />
+        <div className="d-glow b" />
+      </div>
       <AppHeader active="cameras" />
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-10">
-        <h1 className="font-display text-3xl font-bold tracking-tight">Minhas câmeras</h1>
+        <h1 className="font-display text-4xl font-extrabold tracking-tight">Minhas câmeras</h1>
         <p className="mt-1 text-muted">Ao vivo, direto do seu gravador.</p>
         <div className="mt-8">
           <Suspense
