@@ -675,8 +675,7 @@ function stateAt(cam,t){
 let placed=[];
 function drawBox(c,b,sev,label,W,cat){
   const col=sev==="crit"?"#FF5B4F":sev==="warn"?"#F1B23F":(CAT_COLOR[cat]||"#5CC4DC");
-  const j=sev?0:(Math.random()-0.5)*1.2;
-  b={x:b.x+j,y:b.y+j,w:b.w,h:b.h};
+  b={x:Math.round(b.x),y:Math.round(b.y),w:Math.round(b.w),h:Math.round(b.h)}; // quadrado firme (sem tremor)
   const k=Math.min(b.w,b.h)*0.25;
   c.strokeStyle=col; c.lineWidth=sev?2.5:1.5;
   c.beginPath();
@@ -758,7 +757,7 @@ function render(b,cam,t,totalSec){
     drawBox(c,bx,h?h.sev:null,label,W,a.cat);
     if(a.type==="truck"&&bx.plate&&h) drawBox(c,{x:bx.plate.x-3,y:bx.plate.y-3,w:bx.plate.w+6,h:bx.plate.h+6},h.sev,null,W,"obj");
   });
-  c.globalCompositeOperation="overlay"; c.globalAlpha=0.55; const pat=c.createPattern(grain,"repeat"); c.save(); c.translate((Math.random()*128)|0,(Math.random()*128)|0); c.fillStyle=pat; c.fillRect(-128,-128,W+256,H+256); c.restore(); c.globalAlpha=1; c.globalCompositeOperation="source-over";
+  c.globalCompositeOperation="overlay"; c.globalAlpha=0.35; const pat=c.createPattern(grain,"repeat"); c.save(); const gk=Math.floor(t*4); c.translate((gk*37)%128,(gk*61)%128); c.fillStyle=pat; c.fillRect(-128,-128,W+256,H+256); c.restore(); c.globalAlpha=1; c.globalCompositeOperation="source-over";
   const g=c.createRadialGradient(W/2,H/2,H*0.4,W/2,H/2,W*0.75); g.addColorStop(0,"rgba(0,0,0,0)"); g.addColorStop(1,"rgba(0,0,0,.5)"); c.fillStyle=g; c.fillRect(0,0,W,H);
   const fs=Math.max(10,Math.round(W*0.02)); c.font="500 "+fs+"px IBM Plex Mono, monospace"; c.textBaseline="top";
   const osd=(txt,x,y,align)=>{const w=c.measureText(txt).width; const xx=align==="r"?x-w:x; c.fillStyle="rgba(0,0,0,.55)"; c.fillRect(xx-4,y-2,w+8,fs+5); c.fillStyle="#F2F5F5"; c.fillText(txt,xx,y);};
