@@ -372,10 +372,10 @@ export default function Chat() {
             Nenhuma ainda. Converse com a IA para criar a primeira.
           </p>
         ) : (
-          <div className="mt-3 space-y-5">
+          <div className="mt-3 space-y-2">
             {grupos(analises, nomesCam).map((g) => (
-              <section key={g.chave}>
-                <h3 className="flex items-center gap-2 text-sm font-bold">
+              <details key={g.chave} className="group rounded-xl border border-line">
+                <summary className="flex cursor-pointer list-none items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-bold hover:bg-soft [&::-webkit-details-marker]:hidden">
                   <span
                     aria-hidden
                     className="grid h-6 w-6 place-items-center rounded-md bg-brand/20 text-brand"
@@ -393,10 +393,13 @@ export default function Chat() {
                   </span>
                   {g.titulo}
                   <span className="font-normal text-muted">
-                    · {g.itens.length}
+                    · {g.itens.length} {g.itens.length === 1 ? "análise" : "análises"}
                   </span>
-                </h3>
-                <ul className="mt-2 space-y-2">
+                  <span aria-hidden className="ml-auto text-muted transition-transform group-open:rotate-180">
+                    ▾
+                  </span>
+                </summary>
+                <ul className="space-y-2 px-2 pb-2">
                   {g.itens.map((a) => (
                     <li
                       key={a.id}
@@ -437,7 +440,7 @@ export default function Chat() {
                     </li>
                   ))}
                 </ul>
-              </section>
+              </details>
             ))}
           </div>
         )}

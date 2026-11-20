@@ -95,6 +95,15 @@ const ALVO_UM: Record<Alvo, string> = {
   caminhao: "um caminhão ou ônibus",
 };
 
+// "em" + artigo vira contração: "a área da piscina" -> "na área da piscina".
+function emArea(area: string) {
+  const t = area.trim();
+  const m = /^(a|o|as|os)\s+(.*)$/i.exec(t);
+  if (!m) return `em ${t}`;
+  const c = { a: "na", o: "no", as: "nas", os: "nos" }[m[1].toLowerCase() as "a" | "o" | "as" | "os"];
+  return `${c} ${m[2]}`;
+}
+
 function quandoVale(a: AnaliseInput) {
   const dias = a.dias?.length && a.dias.length < 7 ? ` (${a.dias.join(", ")})` : "";
   if (a.horario_inicio && a.horario_fim) return `das ${a.horario_inicio} às ${a.horario_fim}${dias}`;
@@ -104,7 +113,7 @@ function quandoVale(a: AnaliseInput) {
 /** Ex.: "Conta cada pessoa que passa com cachorro, 24 horas. O número sai no relatório." */
 export function descreverAnalise(a: AnaliseInput): string {
   const alvo = (a.alvo ?? "pessoa") as Alvo;
-  const onde = a.area ? ` em ${a.area}` : "";
+  const onde = a.area ? ` ${emArea(a.area)}` : "";
   const q = quandoVale(a);
   switch (a.tipo) {
     case "passagens_por_area":
@@ -114,7 +123,7 @@ export function descreverAnalise(a: AnaliseInput): string {
     case "pessoa_fora_do_horario":
       return `Avisa com foto quando aparece ${ALVO_UM[alvo]}${onde}, ${q}.`;
     case "invasao_de_area":
-      return `Avisa com foto quando ${ALVO_UM[alvo]} entra${onde || " na área"}, ${q}.`;
+      return `Avisa com foto quando ${ALVO_UM[alvo]} entra${onde || " na área marcada"}, ${q}.`;
     case "permanencia_em_area":
       return `Avisa quando ${ALVO_UM[alvo]} fica parado${onde} por mais de ${a.limite ?? 1} min, ${q}.`;
     case "contagem_de_pessoas":
