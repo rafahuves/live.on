@@ -402,9 +402,9 @@ export default function Chat() {
                       key={a.id}
                       className={`rounded-xl border border-line p-3 ${a.ativa ? "" : "opacity-60"}`}
                     >
-                      {!a.ativa && (
-                        <p className="mb-1 text-[11px] font-semibold text-muted uppercase">
-                          Desligada
+                      {(a.exemplo || !a.ativa) && (
+                        <p className="mb-1 text-[11px] font-semibold tracking-wide text-muted uppercase">
+                          {a.exemplo ? "Exemplo · não roda nas câmeras" : "Desligada"}
                         </p>
                       )}
                       <p className="text-sm font-semibold">{a.nome}</p>

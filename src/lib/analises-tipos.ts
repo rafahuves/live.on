@@ -70,7 +70,8 @@ export type AnaliseInput = {
 };
 
 // origem "configuracao" = criada pela tela de configuração inicial (é refeita quando ela é salva de novo).
-export type Analise = AnaliseInput & { id: string; criada_em: string; ativa: boolean; origem?: "configuracao" | "chat" };
+// exemplo = só para mostrar como fica; aparece na lista com a etiqueta "Exemplo" e o detector ignora.
+export type Analise = AnaliseInput & { id: string; criada_em: string; ativa: boolean; origem?: "configuracao" | "chat"; exemplo?: boolean };
 
 // ---- Frase simples do que a análise faz (o cliente entende sem termos técnicos) ----
 const ALVO_PLURAL: Record<Alvo, string> = {

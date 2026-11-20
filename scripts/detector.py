@@ -145,7 +145,7 @@ def contas_e_cameras():
 
 def analises(uid):
     try:
-        return [a for a in json.loads((RAIZ / "data" / "analises" / f"{uid}.json").read_text()) if a.get("ativa", True)]
+        return [a for a in json.loads((RAIZ / "data" / "analises" / f"{uid}.json").read_text()) if a.get("ativa", True) and not a.get("exemplo")]
     except Exception:
         return []
 
