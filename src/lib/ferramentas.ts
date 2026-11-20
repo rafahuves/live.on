@@ -1,7 +1,7 @@
 // Ferramentas do assistente (site e Telegram). Ver src/lib/assistente.ts.
 import { ALVOS, DIAS, TIPOS, TIPO_LABEL, addAnalise, listAnalises, removeAnalises, updateAnalise, validarAnalise, type Analise, type AnaliseInput } from "./analises";
 import { activeChannels, loadDvr } from "./dvr";
-import { fotoDaCamera } from "./fotos";
+import { fotoDaCamera, motivoSemImagem } from "./fotos";
 import type { Ferramenta } from "./assistente";
 import { alertaDeTeste } from "./alertaTeste";
 import { montarRelatorio, type Periodo } from "./relatorios";
@@ -66,7 +66,7 @@ export function fotoCamera(userId: string, enviar: (jpg: ArrayBuffer, legenda: s
       const ch = Number(String(args.camera ?? "").replace(/\D/g, ""));
       if (!activeChannels(dvr).includes(ch)) return `Não existe a câmera ${args.camera}.`;
       const jpg = await fotoDaCamera(userId, dvr, ch, 5_000);
-      if (!jpg) return "O gravador não deu imagem agora (pode estar descansando). Tente de novo em instantes.";
+      if (!jpg) return `${await motivoSemImagem(dvr)} (Explique isso ao cliente com estas palavras simples; não invente outro motivo.)`;
       const hora = new Date().toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" });
       await enviar(jpg, `📷 cam${ch} · ${hora}`);
       return "Foto enviada ao cliente. Não repita a foto; comente em uma frase se quiser.";
@@ -91,7 +91,9 @@ export function ferramentasTelegram(userId: string, cliente: string | null, doCa
         const ch = args.camera ? Number(String(args.camera).replace(/\D/g, "")) : undefined;
         const r = await alertaDeTeste(userId, ch);
         if (!r.enviado) return `Não enviei: o Telegram ainda não está ligado. ${telegramTexto(await telegramStatus(userId, await empresaDaConta(userId, doCadastro), cliente))}`;
-        return r.comFoto ? "Alerta de teste enviado no Telegram, com a foto da câmera." : "Alerta de teste enviado, mas sem foto (o gravador não deu imagem agora).";
+        if (r.comFoto) return "Alerta de teste enviado no Telegram, com a foto da câmera.";
+        const dvr = await loadDvr(userId);
+        return `Alerta de teste enviado, mas sem foto. Motivo: ${dvr ? await motivoSemImagem(dvr) : "nenhum gravador conectado."}`;
       },
     },
     {

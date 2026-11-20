@@ -38,3 +38,22 @@ export async function fotoDaCamera(userId: string, dvr: Dvr, ch: number, maxAgeM
     return buf;
   });
 }
+
+/** Por que não veio imagem? Testa se o gravador responde (1 conexão rápida, só abre e fecha). */
+export async function motivoSemImagem(dvr: Dvr): Promise<string> {
+  const net = await import("node:net");
+  const alcanca = await new Promise<boolean>((ok) => {
+    const s = net.connect({ host: dvr.host, port: dvr.port });
+    const fim = (v: boolean) => {
+      s.destroy();
+      ok(v);
+    };
+    s.setTimeout(3000, () => fim(false));
+    s.on("connect", () => fim(true));
+    s.on("error", () => fim(false));
+  });
+  if (!alcanca) {
+    return "Não consigo falar com o gravador agora. O computador onde o Live.On roda está fora da rede das câmeras (por exemplo, o Mac saiu de casa) ou o gravador está desligado. Assim que ele voltar para a rede do gravador, as fotos e os alertas voltam sozinhos.";
+  }
+  return "O gravador respondeu, mas não mandou a imagem desta câmera agora (ela pode estar sem sinal). Tente de novo em 1 minuto.";
+}
