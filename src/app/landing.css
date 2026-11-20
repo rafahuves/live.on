@@ -24,7 +24,7 @@ body:has(.lp) { background: #0b0814; }
 .lp {
   flex: 1; width: 100%; position: relative; isolation: isolate;
   margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.6 var(--font-body);
-  -webkit-font-smoothing: antialiased; overflow-x: hidden;
+  -webkit-font-smoothing: antialiased; overflow-x: clip;
 }
 .lp a { color: inherit; }
 .lp h1, .lp h2, .lp h3 { font-family: var(--font-display); letter-spacing: -0.02em; text-wrap: balance; margin: 0; }

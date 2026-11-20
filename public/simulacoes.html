@@ -413,7 +413,7 @@ const BIZ = [
  { id:"restaurante", label:"Restaurante", base:hms("12:30:00"),
    name:"Restaurante Maré Alta", kind:"Frutos do mar, 120 lugares", cams:"8 câmeras", ai:"7 com IA", staff:"22 funcionários", plan:"Profissional", price:"R$ 590/mês",
    headline:"Pico do almoço de sábado.",
-   situation:"A dona quer passar na vigilância sanitária sem susto, não deixar cliente esperando, não perder conta e parar de jogar fora peixe da câmara fria. No salão, a conta estimada de cada mesa usa pessoas × ticket médio de R$ 62, e o sistema confere com o caixa.",
+   situation:"A dona quer passar na vigilância sanitária sem susto, não deixar cliente esperando, não perder conta e parar de jogar fora peixe da câmara fria. No salão, cada mesa mostra quantos clientes estão nela e há quanto tempo.",
    cameras:[
     { name:"CAM 01 · SALÃO", bg:"salao",
       actors:[
@@ -431,16 +431,16 @@ const BIZ = [
       ],
       rules:[
         {id:"sematend",sev:"warn",text:"Mesa 4: clientes há 5 min sem nenhum atendimento. Chamar o garçom André.",check:(S,t)=>t>=8&&t<11.5,targets:["m4"],label:"sem atendimento"},
-        {id:"calote",sev:"crit",text:"Mesa 6: os 3 clientes saíram e a conta de R$ 198 segue aberta no caixa. Confira o vídeo antes de agir.",check:(S,t)=>t>=11.6,targets:["m6"],label:"saíram sem pagar"}
+        {id:"calote",sev:"crit",text:"Mesa 6: os 3 clientes saíram da mesa. Confira no caixa se a conta foi paga.",check:(S,t)=>t>=11.6,targets:["m6"],label:"saíram da mesa"}
       ],
       hud:(S)=>"Salão: "+["c6","c7","c8","c9","c10","c11","c12"].filter(k=>S[k]&&S[k].x<1.02).length+" clientes · 3 mesas",
       overlay:(c,W,H,S,t,B)=>{
         const m=Math.floor(t*SIM_RATE/60);
-        if(B.m2) drawTag(c,W,B.m2.x+B.m2.w/2,B.m2.y-H*0.31,["MESA 2 · 2 clientes","Chegaram há "+(38+m)+" min · atendida","Conta estimada R$ 124"],"#5CC4DC");
+        if(B.m2) drawTag(c,W,B.m2.x+B.m2.w/2,B.m2.y-H*0.31,["MESA 2 · 2 clientes","Chegaram há "+(38+m)+" min · atendida"],"#5CC4DC");
         if(B.m4){const since=(3*60)+t*SIM_RATE, served=t>=11.5;
           drawTag(c,W,B.m4.x+B.m4.w/2,B.m4.y-H*0.31,served?["MESA 4 · 2 clientes","Atendida após 5 min 52 s","Pedido sendo feito"]:["MESA 4 · 2 clientes","Sem atendimento há "+mmss(since),"Ainda sem pedido"],served?"#5CC4DC":(since>=300?"#F1B23F":"#5CC4DC"));}
         if(B.m6){const gone=t>=11.6;
-          drawTag(c,W,B.m6.x+B.m6.w/2,B.m6.y-H*0.31,gone?["MESA 6 · vazia","Conta aberta no caixa","R$ 198 não pagos"]:["MESA 6 · 3 clientes","Chegaram há "+(52+m)+" min","Conta estimada R$ 198"],gone?"#FF5B4F":"#5CC4DC");}
+          drawTag(c,W,B.m6.x+B.m6.w/2,B.m6.y-H*0.31,gone?["MESA 6 · vazia","Os 3 clientes saíram agora"]:["MESA 6 · 3 clientes","Chegaram há "+(52+m)+" min"],gone?"#FF5B4F":"#5CC4DC");}
       }
     },
     { name:"CAM 02 · COZINHA", bg:"kitchen",
