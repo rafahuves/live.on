@@ -71,3 +71,54 @@ export type AnaliseInput = {
 
 // origem "configuracao" = criada pela tela de configuração inicial (é refeita quando ela é salva de novo).
 export type Analise = AnaliseInput & { id: string; criada_em: string; ativa: boolean; origem?: "configuracao" | "chat" };
+
+// ---- Frase simples do que a análise faz (o cliente entende sem termos técnicos) ----
+const ALVO_PLURAL: Record<Alvo, string> = {
+  pessoa: "pessoas",
+  pessoa_com_cachorro: "pessoas com cachorro",
+  cachorro: "cachorros",
+  gato: "gatos",
+  carro: "carros",
+  moto: "motos",
+  bicicleta: "bicicletas",
+  caminhao: "caminhões ou ônibus",
+};
+const ALVO_UM: Record<Alvo, string> = {
+  pessoa: "alguém",
+  pessoa_com_cachorro: "alguém com cachorro",
+  cachorro: "um cachorro",
+  gato: "um gato",
+  carro: "um carro",
+  moto: "uma moto",
+  bicicleta: "uma bicicleta",
+  caminhao: "um caminhão ou ônibus",
+};
+
+function quandoVale(a: AnaliseInput) {
+  const dias = a.dias?.length && a.dias.length < 7 ? ` (${a.dias.join(", ")})` : "";
+  if (a.horario_inicio && a.horario_fim) return `das ${a.horario_inicio} às ${a.horario_fim}${dias}`;
+  return `24 horas${dias}`;
+}
+
+/** Ex.: "Conta cada pessoa que passa com cachorro, 24 horas. O número sai no relatório." */
+export function descreverAnalise(a: AnaliseInput): string {
+  const alvo = (a.alvo ?? "pessoa") as Alvo;
+  const onde = a.area ? ` em ${a.area}` : "";
+  const q = quandoVale(a);
+  switch (a.tipo) {
+    case "passagens_por_area":
+      return a.limite
+        ? `Conta ${ALVO_PLURAL[alvo]} que passam${onde}, ${q}, e avisa se passar de ${a.limite} por ${a.periodo ?? "dia"}.`
+        : `Conta ${ALVO_PLURAL[alvo]} que passam${onde}, ${q}. O número sai no relatório.`;
+    case "pessoa_fora_do_horario":
+      return `Avisa com foto quando aparece ${ALVO_UM[alvo]}${onde}, ${q}.`;
+    case "invasao_de_area":
+      return `Avisa com foto quando ${ALVO_UM[alvo]} entra${onde || " na área"}, ${q}.`;
+    case "permanencia_em_area":
+      return `Avisa quando ${ALVO_UM[alvo]} fica parado${onde} por mais de ${a.limite ?? 1} min, ${q}.`;
+    case "contagem_de_pessoas":
+      return `Avisa quando há mais de ${a.limite ?? 5} ${ALVO_PLURAL[alvo]} ao mesmo tempo${onde}, ${q}.`;
+    case "camera_sem_sinal_ou_tampada":
+      return "Avisa se a câmera for tampada ou ficar sem imagem.";
+  }
+}

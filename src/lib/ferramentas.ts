@@ -21,7 +21,10 @@ export function salvarAnalise(userId: string, aposSalvar: (id: string) => Promis
       additionalProperties: false,
       required: ["nome", "cameras", "tipo", "area", "horario_inicio", "horario_fim", "dias", "limite", "periodo", "mensagem_alerta", "objetivo", "alvo"],
       properties: {
-        nome: { type: "string", description: "Nome curto da análise, ex.: 'Passagens pela porta do estoque'" },
+        nome: {
+          type: "string",
+          description: "Nome de 2 a 5 palavras que o cliente reconhece na hora, sem termos técnicos nem código de câmera. Ex.: 'Cachorros na calçada', 'Movimento no estoque à noite', 'Fila no caixa'.",
+        },
         objetivo: { type: ["string", "null"], description: "O que o cliente quer saber, com as palavras dele (ex.: 'saber se mexem nos pallets à noite'). É a pergunta que a IA de visão confere em cada caso." },
         alvo: { type: "string", enum: [...ALVOS], description: "O gatilho que o detector procura: pessoa, pessoa_com_cachorro, cachorro, gato, carro, moto, bicicleta, caminhao." },
         cameras: { type: "array", items: { type: "string" }, description: "Câmeras onde roda, ex.: ['cam2']. Lista vazia = todas." },

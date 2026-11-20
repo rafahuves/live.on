@@ -1,10 +1,16 @@
 import { getCurrentUser } from "@/lib/supabase/server";
 import { PRECISOES, listAnalises, removeAnalise, updateAnalise, type Precisao } from "@/lib/analises";
+import { loadPerfil } from "@/lib/perfil";
 
 export async function GET() {
   const user = await getCurrentUser();
   if (!user) return Response.json({ error: "Faça login de novo." }, { status: 401 });
-  return Response.json({ analises: await listAnalises(user.id) }, { headers: { "Cache-Control": "no-store" } });
+  // Nomes das câmeras dados na configuração ("Calçada"), para a lista agrupar por câmera.
+  const perfil = await loadPerfil(user.id);
+  const cameras = Object.fromEntries(
+    (perfil?.cameras ?? []).filter((c) => c.nome && c.nome !== `Câmera ${c.ch}`).map((c) => [`cam${c.ch}`, c.nome]),
+  );
+  return Response.json({ analises: await listAnalises(user.id), cameras }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function DELETE(request: Request) {

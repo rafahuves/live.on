@@ -3,9 +3,10 @@
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { textoDe, type Msg } from "./assistente";
+import { tituloDaConversa } from "./titulo";
 
 export type ResumoConversa = { id: string; titulo: string; atualizada: string };
-type Conversa = ResumoConversa & { criada: string; messages: Msg[] };
+type Conversa = ResumoConversa & { criada: string; messages: Msg[]; tituloIA?: boolean };
 
 const UUID = /^[0-9a-f-]{36}$/i;
 function pasta(userId: string) {
@@ -44,8 +45,21 @@ export async function saveConversa(userId: string, id: string | null, messages: 
   const antiga = id ? await loadConversa(userId, id) : null;
   const novoId = antiga?.id ?? crypto.randomUUID();
   const primeira = textoDe(messages.find((m) => m.role === "user") ?? { role: "user", content: "" });
-  const titulo = antiga?.titulo ?? (primeira.length > 48 ? primeira.slice(0, 46).trimEnd() + "…" : primeira || "Nova conversa");
-  const c: Conversa = { id: novoId, titulo, criada: antiga?.criada ?? agora, atualizada: agora, messages };
+  let titulo = antiga?.titulo ?? (primeira.length > 48 ? primeira.slice(0, 46).trimEnd() + "…" : primeira || "Nova conversa");
+  let tituloIA = antiga?.tituloIA ?? false;
+  // Depois da primeira resposta, a IA resume o assunto num título curto (uma vez só por conversa).
+  if (!tituloIA && messages.some((m) => m.role === "assistant")) {
+    const trecho = messages
+      .map((m) => `${m.role === "user" ? "Cliente" : "Assistente"}: ${textoDe(m)}`)
+      .filter((l) => !l.endsWith(": "))
+      .join("\n");
+    const novo = await tituloDaConversa(trecho).catch(() => null);
+    if (novo) {
+      titulo = novo;
+      tituloIA = true;
+    }
+  }
+  const c: Conversa = { id: novoId, titulo, criada: antiga?.criada ?? agora, atualizada: agora, messages, tituloIA };
   await mkdir(pasta(userId), { recursive: true });
   await writeFile(arquivo(userId, novoId), JSON.stringify(c));
   return novoId;
