@@ -9,6 +9,7 @@ import { conversar, iaConfigurada, type Msg } from "@/lib/assistente";
 import { configuracoes, ferramentasTelegram, gerenciarAnalises, relatorio, salvarAnalise } from "@/lib/ferramentas";
 import { systemPrompt } from "@/lib/prompt";
 import { telegramStatus, telegramTexto } from "@/lib/telegram";
+import { saveConversa } from "@/lib/conversas";
 
 export async function POST(request: Request) {
   const user = await getCurrentUser();
@@ -16,7 +17,7 @@ export async function POST(request: Request) {
   if (!iaConfigurada()) {
     return Response.json({ error: "Falta ANTHROPIC_API_KEY (ou GEMINI_API_KEY, para testes) no .env.local." }, { status: 500 });
   }
-  const body = (await request.json()) as { messages?: Msg[] };
+  const body = (await request.json()) as { messages?: Msg[]; conversaId?: string | null };
   const history = Array.isArray(body.messages) ? body.messages : [];
   if (!history.length || history[0].role !== "user") {
     return Response.json({ error: "Histórico inválido." }, { status: 400 });
@@ -38,7 +39,8 @@ export async function POST(request: Request) {
       ...gerenciarAnalises(user.id),
       ...configuracoes(user.id),
     ]);
-    return Response.json({ messages, saved, analises: await listAnalises(user.id) });
+    const conversaId = await saveConversa(user.id, body.conversaId ?? null, messages).catch(() => body.conversaId ?? null);
+    return Response.json({ messages, saved, conversaId, analises: await listAnalises(user.id) });
   } catch (e) {
     return Response.json({ error: e instanceof Error ? e.message : "Erro da IA." }, { status: 502 });
   }

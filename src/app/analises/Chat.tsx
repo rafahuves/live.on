@@ -36,6 +36,16 @@ function ComLinks({ text }: { text: string }) {
   );
 }
 
+type Conversa = { id: string; titulo: string; atualizada: string };
+
+const quando = (iso: string) => {
+  const d = new Date(iso);
+  const hoje = new Date().toDateString() === d.toDateString();
+  return hoje
+    ? d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
+    : d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+};
+
 type Tg = { configurado: boolean; nomeRobo?: string; url?: string; conectado?: boolean; nome?: string | null };
 
 function resumo(a: Analise) {
@@ -54,6 +64,45 @@ export default function Chat() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  // Conversas salvas (barra lateral, como no Claude).
+  const [conversaId, setConversaId] = useState<string | null>(null);
+  const [conversas, setConversas] = useState<Conversa[]>([]);
+  const [listaAberta, setListaAberta] = useState(false); // no celular
+  const carregarConversas = () =>
+    fetch("/api/conversas", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: { conversas?: Conversa[] }) => setConversas(d.conversas ?? []))
+      .catch(() => {});
+  useEffect(() => {
+    carregarConversas();
+  }, []);
+
+  function novaConversa() {
+    if (busy) return;
+    setMessages([]);
+    setConversaId(null);
+    setError(null);
+    setText("");
+    setListaAberta(false);
+  }
+
+  async function abrirConversa(id: string) {
+    if (busy || id === conversaId) return setListaAberta(false);
+    const r = await fetch(`/api/conversas?id=${encodeURIComponent(id)}`, { cache: "no-store" });
+    if (!r.ok) return setError("Não consegui abrir essa conversa.");
+    const c = (await r.json()) as { id: string; messages: Msg[] };
+    setMessages(c.messages);
+    setConversaId(c.id);
+    setError(null);
+    setListaAberta(false);
+  }
+
+  async function apagarConversa(id: string) {
+    const r = await fetch(`/api/conversas?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+    const d = (await r.json()) as { conversas?: Conversa[] };
+    setConversas(d.conversas ?? []);
+    if (id === conversaId) novaConversa();
+  }
   // Depois de salvar a configuração (?configurado=1): aviso do chat com o link do robô do Telegram.
   const configurado = useSearchParams().get("configurado") === "1";
   const [tg, setTg] = useState<Tg | null>(null);
@@ -99,11 +148,13 @@ export default function Chat() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: next }),
+        body: JSON.stringify({ messages: next, conversaId }),
       });
-      const data = (await res.json()) as { messages?: Msg[]; analises?: Analise[]; error?: string };
+      const data = (await res.json()) as { messages?: Msg[]; analises?: Analise[]; conversaId?: string; error?: string };
       if (!res.ok || !data.messages) throw new Error(data.error ?? "Erro desconhecido.");
       setMessages(data.messages);
+      if (data.conversaId) setConversaId(data.conversaId);
+      carregarConversas();
       if (data.analises) setAnalises(data.analises);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro ao enviar.");
@@ -134,7 +185,49 @@ export default function Chat() {
   const visiveis = messages.map((m, i) => ({ i, role: m.role, text: visibleText(m) })).filter((m) => m.text);
 
   return (
-    <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_320px]">
+    <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_320px] xl:grid-cols-[230px_1fr_320px]">
+      {/* Conversas salvas: barra lateral no computador, menu que abre e fecha no celular. */}
+      <aside className="flex flex-col rounded-2xl border border-line bg-white p-3 lg:col-span-2 xl:col-span-1 xl:h-[min(640px,70vh)] xl:min-h-[420px]">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={novaConversa}
+            className="flex-1 rounded-xl bg-brand px-3 py-2.5 text-sm font-semibold text-white hover:bg-brand-dark xl:flex-none xl:w-full"
+          >
+            + Nova conversa
+          </button>
+          <button
+            onClick={() => setListaAberta((v) => !v)}
+            aria-expanded={listaAberta}
+            className="rounded-xl border border-line px-3 py-2.5 text-sm font-semibold xl:hidden"
+          >
+            Conversas ({conversas.length}) {listaAberta ? "▴" : "▾"}
+          </button>
+        </div>
+        <p className="mt-4 hidden px-1 text-[11px] font-semibold tracking-wider text-muted uppercase xl:block">Conversas</p>
+        <ul className={`mt-1 space-y-0.5 overflow-y-auto xl:block xl:flex-1 ${listaAberta ? "block max-h-72" : "hidden"}`}>
+          {conversas.length === 0 && <li className="px-2 py-2 text-xs text-muted">Nenhuma conversa salva ainda.</li>}
+          {conversas.map((c) => (
+            <li key={c.id} className="group relative">
+              <button
+                onClick={() => abrirConversa(c.id)}
+                aria-current={c.id === conversaId ? "true" : undefined}
+                className={`w-full rounded-lg px-2.5 py-2 pr-8 text-left text-sm hover:bg-soft ${c.id === conversaId ? "bg-soft font-semibold" : ""}`}
+              >
+                <span className="block truncate">{c.titulo}</span>
+                <span className="block text-[11px] text-muted">{quando(c.atualizada)}</span>
+              </button>
+              <button
+                onClick={() => apagarConversa(c.id)}
+                aria-label={`Apagar a conversa ${c.titulo}`}
+                title="Apagar conversa"
+                className="absolute top-2 right-1.5 rounded-md px-1.5 text-muted opacity-60 hover:text-crit hover:opacity-100 xl:opacity-0 xl:group-hover:opacity-100"
+              >
+                ✕
+              </button>
+            </li>
+          ))}
+        </ul>
+      </aside>
       <section className="flex h-[min(640px,70vh)] min-h-[420px] flex-col rounded-2xl border border-line bg-white">
         <div ref={endRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-4" aria-live="polite">
           {aviso && (

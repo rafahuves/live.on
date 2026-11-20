@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const PROTECTED = ["/cameras", "/analises", "/configurar", "/api/chat", "/api/analises", "/api/telegram", "/api/configurar", "/api/ao-vivo"];
+const PROTECTED = ["/cameras", "/analises", "/configurar", "/api/chat", "/api/analises", "/api/telegram", "/api/configurar", "/api/ao-vivo", "/api/conversas"];
 
 // Renova a sessão do Supabase a cada navegação e protege a área logada.
 export async function proxy(request: NextRequest) {
