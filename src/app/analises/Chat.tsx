@@ -215,7 +215,7 @@ export default function Chat() {
                 <Objetivo valor={a.objetivo ?? ""} onSalvar={(objetivo) => mudar(a.id, { objetivo })} />
                 <div className="mt-2" role="group" aria-label="Precisão">
                   <span className="text-[11px] font-semibold text-muted">Precisão</span>
-                  <div className="mt-1 flex gap-1">
+                  <div className="mt-1 grid grid-cols-2 gap-1.5">
                     {PRECISOES.map((p) => {
                       const on = (a.precisao ?? "equilibrada") === p;
                       return (
@@ -224,7 +224,7 @@ export default function Chat() {
                           title={PRECISAO_DICA[p]}
                           aria-pressed={on}
                           onClick={() => !on && mudar(a.id, { precisao: p })}
-                          className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${on ? "border-brand bg-brand text-white" : "border-line hover:border-brand"}`}
+                          className={`rounded-full border px-2 py-1.5 text-center text-xs font-semibold ${on ? "border-brand bg-brand text-white" : "border-line hover:border-brand"}`}
                         >
                           {PRECISAO_LABEL[p]}
                         </button>
