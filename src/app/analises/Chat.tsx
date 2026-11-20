@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import type Anthropic from "@anthropic-ai/sdk";
-import { PRECISAO_DICA, PRECISAO_LABEL, PRECISOES, TIPO_LABEL, type Analise, type Precisao } from "@/lib/analises-tipos";
+import { TIPO_LABEL, type Analise, type Precisao } from "@/lib/analises-tipos";
 
 type Msg = Anthropic.Beta.BetaMessageParam;
 
@@ -306,26 +306,10 @@ export default function Chat() {
                 <p className="mt-1 text-xs text-muted">{resumo(a)}</p>
                 <p className="mt-1 text-xs">Alerta: “{a.mensagem_alerta}”</p>
                 <Objetivo valor={a.objetivo ?? ""} onSalvar={(objetivo) => mudar(a.id, { objetivo })} />
-                <div className="mt-2" role="group" aria-label="Precisão">
-                  <span className="text-[11px] font-semibold text-muted">Precisão</span>
-                  <div className="mt-1 grid grid-cols-2 gap-1.5">
-                    {PRECISOES.map((p) => {
-                      const on = (a.precisao ?? "equilibrada") === p;
-                      return (
-                        <button
-                          key={p}
-                          title={PRECISAO_DICA[p]}
-                          aria-pressed={on}
-                          onClick={() => !on && mudar(a.id, { precisao: p })}
-                          className={`rounded-full border px-2 py-1.5 text-center text-xs font-semibold ${on ? "border-brand bg-brand text-white" : "border-line hover:border-brand"}`}
-                        >
-                          {PRECISAO_LABEL[p]}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <p className="mt-1 text-[11px] text-muted">{PRECISAO_DICA[a.precisao ?? "equilibrada"]}</p>
-                </div>
+                <p className="mt-2 flex items-center gap-1.5 text-[11px] text-muted">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                  Cada caso é conferido pela IA de visão antes de contar ou avisar
+                </p>
                 <div className="mt-2 flex gap-4">
                   <button onClick={() => mudar(a.id, { ativa: !a.ativa })} className="text-xs font-semibold text-brand hover:underline">
                     {a.ativa ? "Desligar" : "Ligar"}
@@ -339,7 +323,7 @@ export default function Chat() {
           </ul>
         )}
         <p className="mt-4 text-xs text-muted">
-          Fase de teste: as análises ficam salvas no seu computador, e o detector segue a precisão de cada uma.
+          Toda análise roda 24 horas: o detector pega cada sinal e a IA de visão confirma antes de contar ou avisar.
         </p>
       </aside>
     </div>

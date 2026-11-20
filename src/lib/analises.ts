@@ -88,7 +88,7 @@ export function validarAnalise(x: unknown): AnaliseInput | string {
   if (!(a.objetivo === undefined || a.objetivo === null || (typeof a.objetivo === "string" && a.objetivo.length <= 300))) return "objetivo inválido";
   return {
     ...(a as unknown as AnaliseInput),
-    precisao: (a.precisao as Precisao | null | undefined) ?? "equilibrada",
+    precisao: "maxima", // sem níveis: toda análise usa o modo completo (gatilho sensível + IA de visão confere)
     alvo: (a.alvo as Alvo | null | undefined) ?? "pessoa",
     objetivo: typeof a.objetivo === "string" && a.objetivo.trim() ? a.objetivo.trim() : null,
   };

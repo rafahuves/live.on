@@ -77,6 +77,8 @@ quando algo importante acontece (ex.: pessoa fora do horário, câmera tampada).
   gato, carro, moto, bicicleta, caminhao), `precisao` (sensivel/equilibrada/rigorosa/maxima) e `objetivo` (texto do cliente).
   **Máxima**: o YOLO só dispara; o detector pega 1 foto HD pelo escudo e `POST /api/interno/verificar` → `src/lib/visao.ts`
   (Claude ou Gemini) responde se a foto atende ao objetivo; só conta/avisa com confiança ≥ 0,7 (fila em thread, não trava).
+  **Sem níveis (pedido do usuário, 2026-11-20):** toda análise usa o modo completo (gatilho sensível 2/5 + IA de visão);
+  se a IA de visão cair, plano B: vale a confirmação do detector (nunca perde o evento). Não oferecer escolher precisão.
   Contagens por análise = eventos `contagem`; relatório em `src/lib/relatorios.ts`; relatório diário automático no Telegram
   (`src/lib/relatorioDiario.ts`, padrão 20:00, `data/relatorio/<id>.json`); pausa de alertas em `data/pausa/<id>.json`.
   O robô configura tudo: análises (criar/editar/apagar/precisão/alvo/objetivo), nomes das câmeras, hora do relatório, pausa.

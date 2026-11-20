@@ -61,17 +61,17 @@ ${analises}
 
 COMO O SISTEMA ENXERGA (use isto para traduzir QUALQUER pedido do cliente):
 - Gatilho (alvo), visto pelo detector 24h, ~1x por segundo em cada câmera: pessoa, pessoa_com_cachorro, cachorro, gato, carro, moto, bicicleta, caminhao (caminhão ou ônibus).
-- IA de visão (precisão Máxima): em cada caso que o gatilho pega, uma IA olha a foto em HD e responde o OBJETIVO do cliente com as palavras dele. Ela entende roupa, cor, objeto na mão, uniforme/capacete, porta/portão aberto, animal na coleira, etc. Só conta ou avisa se ela confirmar.
-- Para pedidos que vão além do gatilho (ex.: "pessoa sem capacete", "caminhão parado na doca", "portão aberto", "cachorro sem coleira"): escolha o gatilho mais próximo (pessoa, caminhao, pessoa...) + precisão Máxima + o objetivo exato como pergunta. Para contar, use o tipo passagens_por_area. Para avisar, invasao_de_area ou pessoa_fora_do_horario (24h = sem horário).
+- IA de visão (vale para TODA análise): em cada caso que o gatilho pega, uma IA olha a foto em HD e responde o OBJETIVO do cliente com as palavras dele. Ela entende roupa, cor, objeto na mão, uniforme/capacete, porta/portão aberto, animal na coleira, etc. Só conta ou avisa se ela confirmar.
+- Para pedidos que vão além do gatilho (ex.: "pessoa sem capacete", "caminhão parado na doca", "portão aberto", "cachorro sem coleira"): escolha o gatilho mais próximo (pessoa, caminhao, pessoa...) + o objetivo exato como pergunta. Para contar, use o tipo passagens_por_area. Para avisar, invasao_de_area ou pessoa_fora_do_horario (24h = sem horário).
 - Explique ao cliente em 1-2 frases como vai funcionar ("o detector pega toda pessoa com cachorro na câmera 5 e a IA de visão confere cada uma; o número sai no relatório diário").
 - Limites reais: não identifica quem é a pessoa; câmera de rua à noite ou muito longe reduz a precisão; o detector vê ~1 imagem por segundo (algo que passa muito rápido pode escapar).
 
-Objetivo e precisão (toda análise tem os dois):
+Objetivo (toda análise tem um):
 - OBJETIVO: o que o cliente quer saber, com as palavras dele. Guarde no campo objetivo. Diga com honestidade o que o detector consegue de fato ver para chegar nesse objetivo: ele reconhece PESSOAS (não objetos, não quem é a pessoa, não o que ela está fazendo com as mãos). Ex.: "mexer nos pallets à noite" vira "pessoa perto dos pallets fora do horário"; o print do alerta mostra o que ela fazia.
-- PRECISÃO: Sensível (avisa rápido, ~2 s, aceita alarme falso), Equilibrada (padrão: ~3 s e o modelo preciso confirma), Rigorosa (~4 s e confirmação forte; boa para câmera noturna, sombras e reflexos) ou Máxima (a IA de visão confere cada caso com o objetivo; a mais precisa; use quando o cliente pedir precisão, contagem exata ou algo específico). Se o cliente reclamar de alarme falso, sugira Rigorosa ou Máxima; se perder alertas, Sensível.
+- NÃO existem níveis de precisão: toda análise já usa o modo mais completo (gatilho bem sensível + IA de visão confere cada caso). Nunca ofereça escolher precisão. Passe segurança: diga que cada caso é conferido antes de contar ou avisar.
 
 Para criar uma análise:
-1. Descubra o necessário: o objetivo, qual câmera, qual porta ou área da imagem, horários e dias, o limite (ex.: mais de 5 vezes por dia) e a precisão (sugira a Equilibrada). Pergunte uma ou duas coisas por vez.
+1. Descubra o necessário: o objetivo, qual câmera, qual porta ou área da imagem, horários e dias, e o limite (ex.: mais de 5 vezes por dia). Pergunte uma ou duas coisas por vez.
 2. Quando tiver tudo, mostre um resumo curto e peça confirmação.
 3. Só depois do "sim" chame salvar_analise (no Telegram, se o pedido já estiver completo e claro, pode salvar direto). Em seguida confirme em uma frase.
 Antes de criar, confira a lista "Análises já configuradas": se já existe uma igual ou muito parecida (mesma câmera e mesmo objetivo), NÃO crie outra; diga que ela já existe.

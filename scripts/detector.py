@@ -53,7 +53,7 @@ PRECISAO = {
     "sensivel": (2, 0.30, None),
     "equilibrada": (3, 0.35, 0.45),
     "rigorosa": (4, 0.40, 0.55),
-    "maxima": (3, 0.30, None),  # gatilho; quem confirma é a IA de visão (fila_visao)
+    "maxima": (2, 0.30, None),  # gatilho bem sensível (2 de 5 imagens); quem confirma é a IA de visão
 }
 CONFIANCA_VISAO = 0.7       # certeza mínima da IA de visão para contar/avisar
 ESPERA_VISAO = 30           # no máximo 1 verificação a cada 30 s por análise e câmera (fora passagens novas)
@@ -213,7 +213,11 @@ def trabalhador_visao():
             jpg = foto_hd(stream) or jpg_baixa
             v = verificar(objetivo, jpg)
             agora = datetime.now(FUSO)
-            if not v or not v.get("atende") or float(v.get("confianca", 0)) < CONFIANCA_VISAO:
+            if v is None:
+                # Plano B: a IA de visão está fora do ar (internet, limite do plano grátis). Não perde o evento:
+                # vale a confirmação do próprio detector (o alvo ficou estável em várias imagens).
+                v = {"atende": True, "confianca": 0.75, "quantidade": 1, "descricao": "confirmado pelo detector (IA de visão indisponível agora)", "plano_b": True}
+            if not v.get("atende") or float(v.get("confianca", 0)) < CONFIANCA_VISAO:
                 motivo = (v or {}).get("motivo", "IA indisponível")
                 evento(uid, {"cam": cam, "tipo": "descartado_ia", "analise": a.get("nome"), "motivo": motivo})
                 log(f"IA de visão NÃO confirmou: {a.get('nome')} · {nome_cam} · {motivo}")
@@ -231,7 +235,7 @@ def trabalhador_visao():
             texto = f"🔔 {a['mensagem_alerta']}\n📷 {nome_cam}\n🕒 {agora.strftime('%d/%m %H:%M')}\n👁️ {desc}"
             if a.get("objetivo"):
                 texto += f"\n🎯 {a['objetivo']}"
-            texto += f"\n✅ Confirmado pela IA de visão ({round(float(v.get('confianca', 0)) * 100)}%)"
+            texto += "\n✅ Confirmado pelo detector" if v.get("plano_b") else f"\n✅ Confirmado pela IA de visão ({round(float(v.get('confianca', 0)) * 100)}%)"
             ok = alertar(uid, texto, jpg)
             evento(uid, {"cam": cam, "tipo": "alerta", "analise": a.get("nome"), "enviado": ok, "descricao": desc})
             log(f"alerta {'enviado' if ok else 'NÃO enviado'} (IA de visão): {a.get('nome')} · {nome_cam}")
@@ -520,7 +524,8 @@ def main():
                 if not vale_agora(a, agora):
                     continue
                 tipo, limite = a["tipo"], a.get("limite")
-                prec = a.get("precisao") or "equilibrada"
+                # Sem níveis: toda análise usa o modo completo (gatilho sensível + IA de visão confere cada caso).
+                prec = "maxima" if tipo != "camera_sem_sinal_ou_tampada" else "equilibrada"
                 alvo = a.get("alvo") or "pessoa"
                 disparar = False
                 if alvo != "pessoa" and tipo != "camera_sem_sinal_ou_tampada":

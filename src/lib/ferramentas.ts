@@ -1,5 +1,5 @@
 // Ferramentas do assistente (site e Telegram). Ver src/lib/assistente.ts.
-import { ALVOS, DIAS, PRECISOES, PRECISAO_LABEL, TIPOS, TIPO_LABEL, addAnalise, listAnalises, removeAnalises, updateAnalise, validarAnalise, type Analise, type AnaliseInput } from "./analises";
+import { ALVOS, DIAS, TIPOS, TIPO_LABEL, addAnalise, listAnalises, removeAnalises, updateAnalise, validarAnalise, type Analise, type AnaliseInput } from "./analises";
 import { activeChannels, loadDvr } from "./dvr";
 import { fotoDaCamera } from "./fotos";
 import type { Ferramenta } from "./assistente";
@@ -19,15 +19,10 @@ export function salvarAnalise(userId: string, aposSalvar: (id: string) => Promis
     schema: {
       type: "object",
       additionalProperties: false,
-      required: ["nome", "cameras", "tipo", "area", "horario_inicio", "horario_fim", "dias", "limite", "periodo", "mensagem_alerta", "precisao", "objetivo", "alvo"],
+      required: ["nome", "cameras", "tipo", "area", "horario_inicio", "horario_fim", "dias", "limite", "periodo", "mensagem_alerta", "objetivo", "alvo"],
       properties: {
         nome: { type: "string", description: "Nome curto da análise, ex.: 'Passagens pela porta do estoque'" },
-        precisao: {
-          type: "string",
-          enum: [...PRECISOES],
-          description: "sensivel = avisa rápido, aceita alarme falso; equilibrada = padrão; rigorosa = só com muita certeza (sombras, câmera noturna).",
-        },
-        objetivo: { type: ["string", "null"], description: "O que o cliente quer saber, com as palavras dele (ex.: 'saber se mexem nos pallets à noite'). Na precisão Máxima é a pergunta que a IA de visão confere em cada caso." },
+        objetivo: { type: ["string", "null"], description: "O que o cliente quer saber, com as palavras dele (ex.: 'saber se mexem nos pallets à noite'). É a pergunta que a IA de visão confere em cada caso." },
         alvo: { type: "string", enum: [...ALVOS], description: "O gatilho que o detector procura: pessoa, pessoa_com_cachorro, cachorro, gato, carro, moto, bicicleta, caminhao." },
         cameras: { type: "array", items: { type: "string" }, description: "Câmeras onde roda, ex.: ['cam2']. Lista vazia = todas." },
         tipo: { type: "string", enum: [...TIPOS] },
@@ -175,7 +170,6 @@ export function gerenciarAnalises(userId: string): Ferramenta[] {
               a.dias.length ? a.dias.join(",") : "todos os dias",
               a.limite ? `limite ${a.limite}${a.periodo ? "/" + a.periodo : ""}` : "",
               `alvo: ${a.alvo ?? "pessoa"}`,
-              `precisão: ${PRECISAO_LABEL[a.precisao ?? "equilibrada"]}`,
               a.objetivo ? `objetivo: "${a.objetivo}"` : "",
               `alerta: "${a.mensagem_alerta}"`,
             ]
@@ -192,7 +186,7 @@ export function gerenciarAnalises(userId: string): Ferramenta[] {
       schema: {
         type: "object",
         additionalProperties: false,
-        required: ["id", "nome", "cameras", "tipo", "area", "horario_inicio", "horario_fim", "dias", "limite", "periodo", "mensagem_alerta", "ativa", "precisao", "objetivo", "alvo"],
+        required: ["id", "nome", "cameras", "tipo", "area", "horario_inicio", "horario_fim", "dias", "limite", "periodo", "mensagem_alerta", "ativa", "objetivo", "alvo"],
         properties: {
           id: { type: "string", description: "id da análise (veja listar_analises)" },
           nome: opc("string", "novo nome"),
@@ -206,14 +200,13 @@ export function gerenciarAnalises(userId: string): Ferramenta[] {
           periodo: { type: ["string", "null"], enum: ["hora", "dia", null] },
           mensagem_alerta: opc("string", "texto do alerta"),
           ativa: opc("boolean", "true liga, false desliga"),
-          precisao: { type: ["string", "null"], enum: [...PRECISOES, null], description: "sensivel | equilibrada | rigorosa | maxima" },
           alvo: { type: ["string", "null"], enum: [...ALVOS, null], description: "gatilho do detector" },
           objetivo: opc("string", "o que o cliente quer saber; \"\" = apagar o objetivo"),
         },
       },
       async run(args) {
         const patch: Partial<AnaliseInput> & { ativa?: boolean } = {};
-        for (const k of ["nome", "cameras", "tipo", "dias", "periodo", "mensagem_alerta", "ativa", "precisao", "alvo"] as const) {
+        for (const k of ["nome", "cameras", "tipo", "dias", "periodo", "mensagem_alerta", "ativa", "alvo"] as const) {
           if (args[k] !== null && args[k] !== undefined) (patch as Record<string, unknown>)[k] = args[k];
         }
         for (const k of ["area", "horario_inicio", "horario_fim", "objetivo"] as const) {
