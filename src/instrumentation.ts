@@ -7,4 +7,6 @@ export async function register() {
   setTimeout(() => void ligarEscudos().catch(() => {}), 15_000);
   const { iniciarRobo } = await import("./lib/telegramBot");
   iniciarRobo();
+  const { iniciarRelatorioDiario } = await import("./lib/relatorioDiario");
+  iniciarRelatorioDiario();
 }

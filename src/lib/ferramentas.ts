@@ -1,10 +1,13 @@
 // Ferramentas do assistente (site e Telegram). Ver src/lib/assistente.ts.
-import { DIAS, TIPOS, TIPO_LABEL, addAnalise, listAnalises, removeAnalises, updateAnalise, validarAnalise, type Analise, type AnaliseInput } from "./analises";
+import { ALVOS, DIAS, PRECISOES, PRECISAO_LABEL, TIPOS, TIPO_LABEL, addAnalise, listAnalises, removeAnalises, updateAnalise, validarAnalise, type Analise, type AnaliseInput } from "./analises";
 import { activeChannels, loadDvr } from "./dvr";
 import { fotoDaCamera } from "./fotos";
 import type { Ferramenta } from "./assistente";
 import { alertaDeTeste } from "./alertaTeste";
-import { readFile } from "node:fs/promises";
+import { montarRelatorio, type Periodo } from "./relatorios";
+import { lerConfigRelatorio, salvarConfigRelatorio } from "./relatorioDiario";
+import { loadPerfil, savePerfil, type Perfil } from "./perfil";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { empresaDaConta, salvarEmpresa } from "./perfil";
 import { ajustarNomeDoRobo, nomeDoRobo, registrarCodigo, telegramStatus, telegramTexto } from "./telegram";
@@ -16,9 +19,16 @@ export function salvarAnalise(userId: string, aposSalvar: (id: string) => Promis
     schema: {
       type: "object",
       additionalProperties: false,
-      required: ["nome", "cameras", "tipo", "area", "horario_inicio", "horario_fim", "dias", "limite", "periodo", "mensagem_alerta"],
+      required: ["nome", "cameras", "tipo", "area", "horario_inicio", "horario_fim", "dias", "limite", "periodo", "mensagem_alerta", "precisao", "objetivo", "alvo"],
       properties: {
         nome: { type: "string", description: "Nome curto da análise, ex.: 'Passagens pela porta do estoque'" },
+        precisao: {
+          type: "string",
+          enum: [...PRECISOES],
+          description: "sensivel = avisa rápido, aceita alarme falso; equilibrada = padrão; rigorosa = só com muita certeza (sombras, câmera noturna).",
+        },
+        objetivo: { type: ["string", "null"], description: "O que o cliente quer saber, com as palavras dele (ex.: 'saber se mexem nos pallets à noite'). Na precisão Máxima é a pergunta que a IA de visão confere em cada caso." },
+        alvo: { type: "string", enum: [...ALVOS], description: "O gatilho que o detector procura: pessoa, pessoa_com_cachorro, cachorro, gato, carro, moto, bicicleta, caminhao." },
         cameras: { type: "array", items: { type: "string" }, description: "Câmeras onde roda, ex.: ['cam2']. Lista vazia = todas." },
         tipo: { type: "string", enum: [...TIPOS] },
         area: { type: ["string", "null"], description: "Porta ou área da imagem a observar, em palavras. null se for a imagem toda." },
@@ -118,61 +128,25 @@ export function ferramentasTelegram(userId: string, cliente: string | null, doCa
   return lista;
 }
 
-/** Relatório a partir dos eventos do detector (data/eventos/<id>.jsonl): passagens e alertas por câmera. */
+/** Relatório real do detector (passagens por alvo e câmera, alertas). Texto em src/lib/relatorios.ts. */
 export function relatorio(userId: string): Ferramenta {
   return {
     name: "relatorio",
     description:
-      "Relatório real do detector: quantas passagens de pessoas e quantos alertas houve, por câmera, num período. Use para perguntas como 'quantas pessoas passaram hoje na escada'.",
+      "Relatório real do detector: quantas passagens (de pessoas, pessoas com cachorro, veículos...) e alertas houve, por câmera e hora. Use para 'quantas pessoas passaram com cachorro hoje na câmera 5'. Mande o texto ao cliente como veio.",
     schema: {
       type: "object",
       additionalProperties: false,
-      required: ["periodo", "camera"],
+      required: ["periodo", "camera", "alvo"],
       properties: {
         periodo: { type: "string", enum: ["hoje", "ontem", "7dias"] },
-        camera: { type: ["string", "null"], description: "Código da câmera (ex.: 'cam13') ou null para todas" },
+        camera: { type: ["string", "null"], description: "Código da câmera (ex.: 'cam5') ou null para todas" },
+        alvo: { type: ["string", "null"], enum: [...ALVOS, null], description: "O que contar, ou null para tudo" },
       },
     },
     async run(args) {
-      let linhas: string[] = [];
-      try {
-        linhas = (await readFile(path.join(process.cwd(), "data", "eventos", `${userId}.jsonl`), "utf8")).trim().split("\n");
-      } catch {
-        return "Ainda não há nenhum evento: o detector ainda não registrou passagens nesta conta.";
-      }
-      const fmt = (d: Date) => d.toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" }); // AAAA-MM-DD
-      const hoje = new Date();
-      const ontem = new Date(hoje.getTime() - 86_400_000);
-      const desde = new Date(hoje.getTime() - 7 * 86_400_000);
-      const noPeriodo = (ts: string) => {
-        const dia = ts.slice(0, 10);
-        if (args.periodo === "hoje") return dia === fmt(hoje);
-        if (args.periodo === "ontem") return dia === fmt(ontem);
-        return dia >= fmt(desde);
-      };
       const cam = args.camera ? `cam${String(args.camera).replace(/\D/g, "")}` : null;
-      const porCam: Record<string, { passagens: number; alertas: number; horas: Record<string, number> }> = {};
-      let primeiro = "";
-      for (const l of linhas) {
-        try {
-          const e = JSON.parse(l) as { ts: string; cam: string; tipo: string };
-          primeiro ||= e.ts;
-          if (!noPeriodo(e.ts) || (cam && e.cam !== cam)) continue;
-          const c = (porCam[e.cam] ??= { passagens: 0, alertas: 0, horas: {} });
-          if (e.tipo === "passagem") {
-            c.passagens++;
-            const h = e.ts.slice(11, 13) + "h";
-            c.horas[h] = (c.horas[h] ?? 0) + 1;
-          } else if (e.tipo === "alerta") c.alertas++;
-        } catch {}
-      }
-      const partes = Object.entries(porCam).map(([c, v]) => {
-        const pico = Object.entries(v.horas).sort((a, b) => b[1] - a[1])[0];
-        return `${c}: ${v.passagens} passagens${pico ? ` (mais movimento às ${pico[0]})` : ""}, ${v.alertas} alertas`;
-      });
-      const inicio = primeiro ? ` O detector começou a contar em ${primeiro.slice(0, 16).replace("T", " às ")}.` : "";
-      return (partes.length ? `Período ${args.periodo}: ${partes.join("; ")}.` : `Nenhuma passagem registrada no período ${args.periodo}.`) + inicio +
-        " (Passagem = alguém aparece na câmera depois de a imagem ficar vazia.)";
+      return montarRelatorio(userId, (args.periodo as Periodo) ?? "hoje", cam, (args.alvo as string | null) ?? null);
     },
   };
 }
@@ -200,6 +174,9 @@ export function gerenciarAnalises(userId: string): Ferramenta[] {
               a.horario_inicio && a.horario_fim ? `${a.horario_inicio}-${a.horario_fim}` : "o dia todo",
               a.dias.length ? a.dias.join(",") : "todos os dias",
               a.limite ? `limite ${a.limite}${a.periodo ? "/" + a.periodo : ""}` : "",
+              `alvo: ${a.alvo ?? "pessoa"}`,
+              `precisão: ${PRECISAO_LABEL[a.precisao ?? "equilibrada"]}`,
+              a.objetivo ? `objetivo: "${a.objetivo}"` : "",
               `alerta: "${a.mensagem_alerta}"`,
             ]
               .filter(Boolean)
@@ -215,7 +192,7 @@ export function gerenciarAnalises(userId: string): Ferramenta[] {
       schema: {
         type: "object",
         additionalProperties: false,
-        required: ["id", "nome", "cameras", "tipo", "area", "horario_inicio", "horario_fim", "dias", "limite", "periodo", "mensagem_alerta", "ativa"],
+        required: ["id", "nome", "cameras", "tipo", "area", "horario_inicio", "horario_fim", "dias", "limite", "periodo", "mensagem_alerta", "ativa", "precisao", "objetivo", "alvo"],
         properties: {
           id: { type: "string", description: "id da análise (veja listar_analises)" },
           nome: opc("string", "novo nome"),
@@ -229,14 +206,17 @@ export function gerenciarAnalises(userId: string): Ferramenta[] {
           periodo: { type: ["string", "null"], enum: ["hora", "dia", null] },
           mensagem_alerta: opc("string", "texto do alerta"),
           ativa: opc("boolean", "true liga, false desliga"),
+          precisao: { type: ["string", "null"], enum: [...PRECISOES, null], description: "sensivel | equilibrada | rigorosa | maxima" },
+          alvo: { type: ["string", "null"], enum: [...ALVOS, null], description: "gatilho do detector" },
+          objetivo: opc("string", "o que o cliente quer saber; \"\" = apagar o objetivo"),
         },
       },
       async run(args) {
         const patch: Partial<AnaliseInput> & { ativa?: boolean } = {};
-        for (const k of ["nome", "cameras", "tipo", "dias", "periodo", "mensagem_alerta", "ativa"] as const) {
+        for (const k of ["nome", "cameras", "tipo", "dias", "periodo", "mensagem_alerta", "ativa", "precisao", "alvo"] as const) {
           if (args[k] !== null && args[k] !== undefined) (patch as Record<string, unknown>)[k] = args[k];
         }
-        for (const k of ["area", "horario_inicio", "horario_fim"] as const) {
+        for (const k of ["area", "horario_inicio", "horario_fim", "objetivo"] as const) {
           if (args[k] !== null && args[k] !== undefined) patch[k] = args[k] === "" ? null : String(args[k]);
         }
         if (args.limite !== null && args.limite !== undefined) {
@@ -260,6 +240,83 @@ export function gerenciarAnalises(userId: string): Ferramenta[] {
         const ids = Array.isArray(args.ids) ? args.ids.map(String) : [];
         const n = await removeAnalises(userId, ids);
         return n ? `Apaguei ${n} análise${n > 1 ? "s" : ""}.` : "Nenhuma análise encontrada com esses ids.";
+      },
+    },
+  ];
+}
+
+/** Configurações da conta pelo chat/robô: nomes das câmeras, relatório diário e pausa dos alertas. */
+export function configuracoes(userId: string): Ferramenta[] {
+  return [
+    {
+      name: "nomear_camera",
+      description: "Dá ou troca o nome de uma câmera (ex.: cam5 = 'Calçada'). O nome aparece nos alertas, relatórios e no painel.",
+      schema: {
+        type: "object",
+        additionalProperties: false,
+        required: ["camera", "nome"],
+        properties: { camera: { type: "string", description: "ex.: 'cam5'" }, nome: { type: "string", description: "ex.: 'Calçada'" } },
+      },
+      async run(args) {
+        const ch = Number(String(args.camera ?? "").replace(/\D/g, ""));
+        const nome = String(args.nome ?? "").trim().slice(0, 40);
+        const dvr = await loadDvr(userId);
+        const canais = dvr ? activeChannels(dvr) : [];
+        if (!canais.includes(ch)) return `Não existe a câmera cam${ch}.`;
+        if (!nome) return "Nome vazio.";
+        const atual = await loadPerfil(userId);
+        const perfil: Perfil = atual ?? {
+          local: "comercio",
+          cameras: canais.map((c) => ({ ch: c, nome: `Câmera ${c}`, mostra: "outro", tipos: [] })),
+          inicio: "08:00",
+          fim: "18:00",
+          dias: ["seg", "ter", "qua", "qui", "sex", "sab"],
+          dia_todo: true,
+          contato_nome: "",
+          contato_whatsapp: "",
+        };
+        const cams = perfil.cameras.some((c) => c.ch === ch)
+          ? perfil.cameras.map((c) => (c.ch === ch ? { ...c, nome } : c))
+          : [...perfil.cameras, { ch, nome, mostra: "outro" as const, tipos: [] }];
+        await savePerfil(userId, { ...perfil, cameras: cams });
+        return `Pronto: cam${ch} agora se chama "${nome}".`;
+      },
+    },
+    {
+      name: "agendar_relatorio",
+      description: "Define a hora do relatório diário automático no Telegram (ex.: '20:00'), ou null para desligar.",
+      schema: {
+        type: "object",
+        additionalProperties: false,
+        required: ["hora"],
+        properties: { hora: { type: ["string", "null"], description: "HH:MM (horário de Brasília) ou null para desligar" } },
+      },
+      async run(args) {
+        const hora = args.hora == null || args.hora === "" ? null : String(args.hora);
+        if (hora && !/^([01]\d|2[0-3]):[0-5]\d$/.test(hora)) return "Horário inválido (use HH:MM).";
+        const cfg = await lerConfigRelatorio(userId);
+        await salvarConfigRelatorio(userId, { ...cfg, hora });
+        return hora ? `Pronto: relatório diário todo dia às ${hora}, aqui no Telegram.` : "Pronto: relatório diário desligado.";
+      },
+    },
+    {
+      name: "pausar_alertas",
+      description: "Pausa os alertas do Telegram por alguns minutos (a IA continua contando e registrando), ou 0 para retomar.",
+      schema: {
+        type: "object",
+        additionalProperties: false,
+        required: ["minutos"],
+        properties: { minutos: { type: "integer", description: "minutos de pausa (máx. 10080 = 7 dias); 0 = retomar já" } },
+      },
+      async run(args) {
+        const min = Math.max(0, Math.min(10080, Number(args.minutos) || 0));
+        const dir = path.join(process.cwd(), "data", "pausa");
+        await mkdir(dir, { recursive: true });
+        const ate = min ? Date.now() / 1000 + min * 60 : 0;
+        await writeFile(path.join(dir, `${userId}.json`), JSON.stringify({ ate }));
+        if (!min) return "Pronto: alertas retomados.";
+        const quando = new Date(ate * 1000).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" });
+        return `Pronto: alertas pausados até ${quando}. A IA continua contando para os relatórios.`;
       },
     },
   ];

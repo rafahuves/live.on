@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import type Anthropic from "@anthropic-ai/sdk";
-import { TIPO_LABEL, type Analise } from "@/lib/analises-tipos";
+import { PRECISAO_DICA, PRECISAO_LABEL, PRECISOES, TIPO_LABEL, type Analise, type Precisao } from "@/lib/analises-tipos";
 
 type Msg = Anthropic.Beta.BetaMessageParam;
 
@@ -114,6 +114,17 @@ export default function Chat() {
     }
   }
 
+  async function mudar(id: string, campos: { precisao?: Precisao; objetivo?: string; ativa?: boolean }) {
+    const res = await fetch("/api/analises", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, ...campos }),
+    });
+    const data = (await res.json()) as { analises?: Analise[]; error?: string };
+    if (data.analises) setAnalises(data.analises);
+    else setError(data.error ?? "Não deu certo.");
+  }
+
   async function remover(id: string) {
     const res = await fetch(`/api/analises?id=${encodeURIComponent(id)}`, { method: "DELETE" });
     const data = (await res.json()) as { analises?: Analise[] };
@@ -197,21 +208,90 @@ export default function Chat() {
         ) : (
           <ul className="mt-3 space-y-3">
             {analises.map((a) => (
-              <li key={a.id} className="rounded-xl border border-line p-3">
+              <li key={a.id} className={`rounded-xl border border-line p-3 ${a.ativa ? "" : "opacity-60"}`}>
                 <p className="text-sm font-semibold">{a.nome}</p>
                 <p className="mt-1 text-xs text-muted">{resumo(a)}</p>
                 <p className="mt-1 text-xs">Alerta: “{a.mensagem_alerta}”</p>
-                <button onClick={() => remover(a.id)} className="mt-2 text-xs font-semibold text-crit hover:underline">
-                  Excluir
-                </button>
+                <Objetivo valor={a.objetivo ?? ""} onSalvar={(objetivo) => mudar(a.id, { objetivo })} />
+                <div className="mt-2" role="group" aria-label="Precisão">
+                  <span className="text-[11px] font-semibold text-muted">Precisão</span>
+                  <div className="mt-1 flex gap-1">
+                    {PRECISOES.map((p) => {
+                      const on = (a.precisao ?? "equilibrada") === p;
+                      return (
+                        <button
+                          key={p}
+                          title={PRECISAO_DICA[p]}
+                          aria-pressed={on}
+                          onClick={() => !on && mudar(a.id, { precisao: p })}
+                          className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${on ? "border-brand bg-brand text-white" : "border-line hover:border-brand"}`}
+                        >
+                          {PRECISAO_LABEL[p]}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="mt-1 text-[11px] text-muted">{PRECISAO_DICA[a.precisao ?? "equilibrada"]}</p>
+                </div>
+                <div className="mt-2 flex gap-4">
+                  <button onClick={() => mudar(a.id, { ativa: !a.ativa })} className="text-xs font-semibold text-brand hover:underline">
+                    {a.ativa ? "Desligar" : "Ligar"}
+                  </button>
+                  <button onClick={() => remover(a.id)} className="text-xs font-semibold text-crit hover:underline">
+                    Excluir
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
         )}
         <p className="mt-4 text-xs text-muted">
-          Fase de teste: as análises ficam salvas no seu computador. A detecção nas câmeras ainda vai ser ligada a elas.
+          Fase de teste: as análises ficam salvas no seu computador, e o detector segue a precisão de cada uma.
         </p>
       </aside>
     </div>
+  );
+}
+
+// Objetivo da análise: o que o cliente quer saber, com as palavras dele. Edita no lugar.
+function Objetivo({ valor, onSalvar }: { valor: string; onSalvar: (v: string) => void }) {
+  const [editando, setEditando] = useState(false);
+  const [texto, setTexto] = useState(valor);
+  if (!editando) {
+    return (
+      <p className="mt-1 text-xs">
+        <span className="font-semibold">Objetivo:</span> {valor ? `“${valor}”` : <span className="text-muted">não definido</span>}{" "}
+        <button
+          onClick={() => {
+            setTexto(valor);
+            setEditando(true);
+          }}
+          className="font-semibold text-brand hover:underline"
+        >
+          {valor ? "editar" : "definir"}
+        </button>
+      </p>
+    );
+  }
+  return (
+    <form
+      className="mt-1 flex gap-1"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSalvar(texto);
+        setEditando(false);
+      }}
+    >
+      <input
+        value={texto}
+        maxLength={300}
+        autoFocus
+        onChange={(e) => setTexto(e.target.value)}
+        placeholder="Ex.: saber se alguém mexe nos pallets à noite"
+        aria-label="Objetivo da análise"
+        className="min-w-0 flex-1 rounded-lg border border-line px-2 py-1 text-xs outline-none focus:border-brand"
+      />
+      <button className="rounded-lg bg-brand px-2 text-xs font-semibold text-white">Salvar</button>
+    </form>
   );
 }

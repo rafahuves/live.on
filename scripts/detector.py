@@ -42,6 +42,21 @@ PERMANENCIA_SEG = 60       # pessoa parada 1 min (se a análise não disser outr
 SUMIU_SEG = 3              # pessoa some por 3 s = a passagem terminou
 JANELA, MINIMO_NA_JANELA = 5, 3  # pessoa precisa aparecer em 3 das últimas 5 imagens (~3 s)
 CONFIRMA = 0.45            # certeza mínima do modelo preciso para confirmar um alerta
+# O que o YOLO reconhece (ids do COCO) e o nome usado nas análises ("alvo").
+CLASSES = {0: "pessoa", 1: "bicicleta", 2: "carro", 3: "moto", 5: "caminhao", 7: "caminhao", 15: "gato", 16: "cachorro"}
+CERTEZA_OBJETO = 0.30      # certeza mínima para bicho/veículo
+SUMIU_ALVO_SEG = 5         # alvo some por 5 s = a passagem terminou (cachorro some atrás de poste etc.)
+
+# Precisão de cada análise: (aparições mínimas nas últimas 5 imagens, certeza mínima do modelo rápido,
+# certeza mínima do modelo preciso para confirmar — None = não precisa confirmar).
+PRECISAO = {
+    "sensivel": (2, 0.30, None),
+    "equilibrada": (3, 0.35, 0.45),
+    "rigorosa": (4, 0.40, 0.55),
+    "maxima": (3, 0.30, None),  # gatilho; quem confirma é a IA de visão (fila_visao)
+}
+CONFIANCA_VISAO = 0.7       # certeza mínima da IA de visão para contar/avisar
+ESPERA_VISAO = 30           # no máximo 1 verificação a cada 30 s por análise e câmera (fora passagens novas)
 SO_ANALISES = os.environ.get("DETECTOR_SO_ANALISES") == "1"  # 1 = olha só as câmeras que têm análise
 
 
@@ -161,7 +176,81 @@ CHAVE = chave_local()
 ENSAIO = os.environ.get("DETECTOR_ENSAIO") == "1"  # ensaio: mostra o que faria, sem mandar no Telegram
 
 
+import queue
+fila_visao = queue.Queue(maxsize=30)
+contagem_verificada = {}  # (id da análise, cam, período) -> passagens confirmadas pela IA de visão
+
+
+def foto_hd(stream):
+    """1 foto em HD (1 conexão rápida, pelo escudo). Se falhar, None."""
+    try:
+        with urllib.request.urlopen(f"{GO2RTC}/api/frame.jpeg?src={stream}_hd", timeout=10) as r:
+            jpg = r.read()
+            return jpg if len(jpg) > 5000 else None
+    except Exception:
+        return None
+
+
+def verificar(objetivo, jpg):
+    corpo = json.dumps({"objetivo": objetivo, "foto": base64.b64encode(jpg).decode()}).encode()
+    req = urllib.request.Request(f"{SITE}/api/interno/verificar", data=corpo, method="POST",
+                                 headers={"Content-Type": "application/json", "x-liveon-key": CHAVE})
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            return json.load(r)
+    except Exception as e:
+        log("IA de visão não respondeu:", e)
+        return None
+
+
+def trabalhador_visao():
+    """Confere na IA de visão cada caso das análises de precisão Máxima (em paralelo à vigilância)."""
+    while True:
+        item = fila_visao.get()
+        try:
+            uid, a, cam, stream, jpg_baixa, tipo_caso, nome_cam = item
+            objetivo = a.get("objetivo") or a.get("mensagem_alerta") or a.get("nome")
+            jpg = foto_hd(stream) or jpg_baixa
+            v = verificar(objetivo, jpg)
+            agora = datetime.now(FUSO)
+            if not v or not v.get("atende") or float(v.get("confianca", 0)) < CONFIANCA_VISAO:
+                motivo = (v or {}).get("motivo", "IA indisponível")
+                evento(uid, {"cam": cam, "tipo": "descartado_ia", "analise": a.get("nome"), "motivo": motivo})
+                log(f"IA de visão NÃO confirmou: {a.get('nome')} · {nome_cam} · {motivo}")
+                continue
+            desc = v.get("descricao", "")
+            if tipo_caso == "contagem":
+                periodo = agora.strftime("%Y-%m-%d") if a.get("periodo") != "hora" else agora.strftime("%Y-%m-%d %H")
+                k = (a["id"], cam, periodo)
+                contagem_verificada[k] = contagem_verificada.get(k, 0) + 1
+                evento(uid, {"cam": cam, "tipo": "contagem", "analise_id": a["id"], "analise": a.get("nome"), "descricao": desc, "qtd": int(v.get("quantidade", 1) or 1)})
+                log(f"contado (IA de visão confirmou): {a.get('nome')} · {nome_cam} · {desc}")
+                limite = a.get("limite")
+                if not (limite and contagem_verificada[k] == limite + 1):
+                    continue
+            texto = f"🔔 {a['mensagem_alerta']}\n📷 {nome_cam}\n🕒 {agora.strftime('%d/%m %H:%M')}\n👁️ {desc}"
+            if a.get("objetivo"):
+                texto += f"\n🎯 {a['objetivo']}"
+            texto += f"\n✅ Confirmado pela IA de visão ({round(float(v.get('confianca', 0)) * 100)}%)"
+            ok = alertar(uid, texto, jpg)
+            evento(uid, {"cam": cam, "tipo": "alerta", "analise": a.get("nome"), "enviado": ok, "descricao": desc})
+            log(f"alerta {'enviado' if ok else 'NÃO enviado'} (IA de visão): {a.get('nome')} · {nome_cam}")
+        except Exception as e:
+            log("erro na verificação:", e)
+
+
+def pausado(uid):
+    """Alertas pausados pelo cliente (pelo robô)? data/pausa/<id>.json = {"ate": timestamp}. Continua contando."""
+    try:
+        return time.time() < json.loads((RAIZ / "data" / "pausa" / f"{uid}.json").read_text()).get("ate", 0)
+    except Exception:
+        return False
+
+
 def alertar(uid, texto, jpg):
+    if pausado(uid):
+        log("alerta não enviado: alertas pausados pelo cliente")
+        return False
     if ENSAIO:
         log("[ensaio] mandaria:", texto.replace("\n", " | "))
         return False
@@ -183,6 +272,26 @@ def evento(uid, dados):
     pasta.mkdir(parents=True, exist_ok=True)
     with open(pasta / f"{uid}.jsonl", "a") as f:
         f.write(json.dumps({"ts": datetime.now(FUSO).isoformat(timespec="seconds"), **dados}, ensure_ascii=False) + "\n")
+
+
+def contar_alvo(alvo, pessoas, obj):
+    """Quantos 'alvos' há na imagem. Pessoa com cachorro = cachorro perto de alguma pessoa
+    (centro do cachorro a menos de ~1,6 altura de pessoa do centro dela)."""
+    if alvo == "pessoa":
+        return len(pessoas)
+    if alvo == "pessoa_com_cachorro":
+        caes = [b for b, _ in obj.get("cachorro", [])]
+        n = 0
+        for c in caes:
+            ccx, ccy = (c[0] + c[2]) / 2, (c[1] + c[3]) / 2
+            for p in pessoas:
+                h = p[3] - p[1]
+                pcx, pcy = (p[0] + p[2]) / 2, (p[1] + p[3]) / 2
+                if ((ccx - pcx) ** 2 + (ccy - pcy) ** 2) ** 0.5 < 1.6 * h:
+                    n += 1
+                    break
+        return n
+    return len(obj.get(alvo, []))
 
 
 def _iou(a, b):
@@ -269,6 +378,8 @@ def main():
     aparelho = os.environ.get("DETECTOR_APARELHO", "cpu")
     torch.set_num_threads(4)  # deixa núcleos livres para o site e o conversor
     log(f"detector ligado (YOLO em {aparelho}).")
+    threading.Thread(target=trabalhador_visao, daemon=True).start()
+    ultima_visao = {}
 
     cameras = {}        # stream -> Camera
     estado = {}         # (uid, cam) -> {"pessoas": bool, "desde": t, "visto": t, "liso_desde": t}
@@ -318,11 +429,20 @@ def main():
         validas = [i for i, im in enumerate(imagens) if im is not None]
         resultados = {}
         certezas = {}
+        objetos = {}
         if validas:
-            saida = modelo.predict([imagens[i] for i in validas], classes=[0], conf=CONFIANCA, device=aparelho, verbose=False)
+            saida = modelo.predict([imagens[i] for i in validas], classes=list(CLASSES), conf=0.25, device=aparelho, verbose=False)
             for i, r in zip(validas, saida):
-                resultados[i] = [tuple(map(float, b)) for b in r.boxes.xyxy.tolist()]
-                certezas[i] = [float(c) for c in r.boxes.conf.tolist()]
+                caixas_r, conf_r, cls_r = r.boxes.xyxy.tolist(), r.boxes.conf.tolist(), r.boxes.cls.tolist()
+                pessoas_i = [(tuple(map(float, b)), float(c)) for b, c, k in zip(caixas_r, conf_r, cls_r) if int(k) == 0 and c >= CONFIANCA]
+                resultados[i] = [b for b, _ in pessoas_i]
+                certezas[i] = [c for _, c in pessoas_i]
+                obj = {}
+                for b, c, k in zip(caixas_r, conf_r, cls_r):
+                    nome = CLASSES.get(int(k))
+                    if nome and nome != "pessoa" and c >= CERTEZA_OBJETO:
+                        obj.setdefault(nome, []).append((tuple(map(float, b)), float(c)))
+                objetos[i] = obj
 
         agora = datetime.now(FUSO)
         t = time.time()
@@ -339,13 +459,22 @@ def main():
             ao_vivo.setdefault(uid, {})[cam] = {
                 "n": len(pessoas),
                 "pessoas": [{"id": p["id"], "b": [round(p["b"][0] / larg, 4), round(p["b"][1] / alt, 4), round(p["b"][2] / larg, 4), round(p["b"][3] / alt, 4)], "c": round(p["c"], 2), "desde": int(p["desde"])} for p in pessoas],
+                "objetos": [{"tipo": nomeo, "b": [round(b[0] / larg, 4), round(b[1] / alt, 4), round(b[2] / larg, 4), round(b[3] / alt, 4)], "c": round(c, 2)}
+                            for nomeo, lista in objetos.get(i, {}).items() for b, c in lista],
                 "w": larg, "h": alt, "ts": int(t),
             }
 
             # Contra alarme falso: só conta "tem pessoa" se ela aparece em pelo menos 3 das últimas 5 imagens
             # (uns 3 s). Uma sombra, a manta no sofá ou o reflexo do infravermelho por 1 imagem não contam.
             e["hist"] = (e["hist"] + [bool(caixas)])[-JANELA:]
+            e["hist_c"] = (e.get("hist_c", []) + [max(certezas.get(i, []) or [0.0])])[-JANELA:]
             presente = sum(e["hist"]) >= MINIMO_NA_JANELA
+
+            def presente_com(prec):
+                minimo, certeza, _ = PRECISAO.get(prec, PRECISAO["equilibrada"])
+                return sum(c >= certeza for c in e["hist_c"]) >= minimo
+
+            confs_agora = certezas.get(i, [])
             if presente and caixas:
                 e["caixas"] = caixas
             caixas = e.get("caixas", []) if presente else []
@@ -361,6 +490,24 @@ def main():
             elif e["pessoas"] and t - e["visto"] > SUMIU_SEG:
                 e["pessoas"] = False
 
+            # Passagens de outros alvos (cachorro, pessoa com cachorro, veículos), só os que alguma análise usa.
+            obj_i = objetos.get(i, {})
+            novas_alvo = {}
+            precisa_alvos = {a.get("alvo") for a in analises(uid) if a.get("alvo") not in (None, "pessoa") and (not a.get("cameras") or cam in a["cameras"])}
+            for alvo in precisa_alvos:
+                qtd = contar_alvo(alvo, resultados.get(i, []), obj_i)
+                ea = e.setdefault("alvos", {}).setdefault(alvo, {"hist": [], "presente": False, "visto": 0.0, "desde": t, "qtd": 0})
+                ea["hist"] = (ea["hist"] + [qtd > 0])[-JANELA:]
+                estavel = sum(ea["hist"]) >= MINIMO_NA_JANELA
+                novas_alvo[alvo] = False
+                if estavel:
+                    if not ea["presente"]:
+                        ea["presente"], ea["desde"], novas_alvo[alvo] = True, t, True
+                        evento(uid, {"cam": cam, "tipo": "passagem", "alvo": alvo, "qtd": qtd})
+                    ea["visto"], ea["qtd"] = t, max(qtd, 1)
+                elif ea["presente"] and t - ea["visto"] > SUMIU_ALVO_SEG:
+                    ea["presente"] = False
+
             # Imagem "lisa" (quase uma cor só) = câmera tampada.
             desvio = sum(ImageStat.Stat(imagens[i].convert("L")).stddev)
             e["liso_desde"] = (e["liso_desde"] or t) if desvio < 6 else None
@@ -373,11 +520,30 @@ def main():
                 if not vale_agora(a, agora):
                     continue
                 tipo, limite = a["tipo"], a.get("limite")
+                prec = a.get("precisao") or "equilibrada"
+                alvo = a.get("alvo") or "pessoa"
                 disparar = False
-                if tipo in ("pessoa_fora_do_horario", "invasao_de_area"):
-                    disparar = presente
+                if alvo != "pessoa" and tipo != "camera_sem_sinal_ou_tampada":
+                    ea = e.get("alvos", {}).get(alvo)
+                    if not ea:
+                        continue
+                    if tipo == "passagens_por_area":
+                        if novas_alvo.get(alvo):
+                            periodo = agora.strftime("%Y-%m-%d") if a.get("periodo") != "hora" else agora.strftime("%Y-%m-%d %H")
+                            k = (a["id"], cam, periodo)
+                            contagem[k] = contagem.get(k, 0) + 1
+                            disparar = bool(limite) and contagem[k] == limite + 1
+                    elif tipo == "contagem_de_pessoas":
+                        disparar = ea["presente"] and ea["qtd"] > (limite or 5)
+                    elif tipo == "permanencia_em_area":
+                        disparar = ea["presente"] and t - ea["desde"] >= (limite * 60 if limite else PERMANENCIA_SEG)
+                    else:  # fora do horário / invasão
+                        disparar = novas_alvo.get(alvo, False) or (ea["presente"] and t - ea["desde"] < 10)
+                elif tipo in ("pessoa_fora_do_horario", "invasao_de_area"):
+                    disparar = presente_com(prec)
                 elif tipo == "contagem_de_pessoas":
-                    disparar = presente and n > (limite or 5)
+                    certeza = PRECISAO.get(prec, PRECISAO["equilibrada"])[1]
+                    disparar = presente_com(prec) and sum(c >= certeza for c in confs_agora) > (limite or 5)
                 elif tipo == "permanencia_em_area":
                     disparar = e["pessoas"] and t - e["desde"] >= (limite * 60 if limite else PERMANENCIA_SEG)
                 elif tipo == "passagens_por_area" and nova_passagem:
@@ -387,26 +553,52 @@ def main():
                     disparar = bool(limite) and contagem[k] == limite + 1  # avisa quando passa do limite
                 elif tipo == "camera_sem_sinal_ou_tampada":
                     disparar = e["liso_desde"] is not None and t - e["liso_desde"] >= TAMPADA_SEG
+                # Precisão Máxima: não avisa direto; manda o caso para a IA de visão conferir com o objetivo.
+                if prec == "maxima":
+                    nova = novas_alvo.get(alvo, False) if alvo != "pessoa" else nova_passagem
+                    caso = None
+                    if tipo == "passagens_por_area" and nova:
+                        caso = "contagem"
+                    elif tipo != "passagens_por_area" and disparar and t - ultimo_alerta.get((a["id"], cam), 0) >= ESPERA_ALERTA \
+                            and t - ultima_visao.get((a["id"], cam), 0) >= ESPERA_VISAO:
+                        caso = "alerta"
+                        ultimo_alerta[(a["id"], cam)] = t
+                    if caso:
+                        ultima_visao[(a["id"], cam)] = t
+                        try:
+                            fila_visao.put_nowait((uid, a, cam, contas[uid][cam], jpg, caso, nomes_das_cameras(uid).get(cam, cam)))
+                        except queue.Full:
+                            log("fila da IA de visão cheia; caso ignorado")
+                    continue
+                if tipo == "passagens_por_area" and (novas_alvo.get(alvo) if alvo != "pessoa" else nova_passagem):
+                    evento(uid, {"cam": cam, "tipo": "contagem", "analise_id": a["id"], "analise": a.get("nome")})
                 if disparar and t - ultimo_alerta.get((a["id"], cam), 0) >= ESPERA_ALERTA:
                     disparadas.append(a)
             if not disparadas:
                 continue
 
-            # Alerta de pessoa: o modelo PRECISO tem que confirmar na imagem de agora (barra alarme falso).
-            de_pessoa = [a for a in disparadas if a["tipo"] != "camera_sem_sinal_ou_tampada"]
-            if de_pessoa and preciso:
+            # Alerta de pessoa: conforme a precisão da análise, o modelo PRECISO confirma na imagem de agora.
+            def exige(a):
+                if a["tipo"] == "camera_sem_sinal_ou_tampada" or (a.get("alvo") or "pessoa") != "pessoa":
+                    return None
+                return PRECISAO.get(a.get("precisao") or "equilibrada", PRECISAO["equilibrada"])[2]
+            confirmar = [a for a in disparadas if exige(a) is not None]
+            if confirmar and preciso:
                 if t - e.get("recusado", 0) < 60:
-                    disparadas = [a for a in disparadas if a not in de_pessoa]
+                    disparadas = [a for a in disparadas if a not in confirmar]
                 else:
-                    rx = preciso.predict(imagens[i], classes=[0], conf=CONFIRMA, device=aparelho, verbose=False)[0]
+                    rx = preciso.predict(imagens[i], classes=[0], conf=min(exige(a) for a in confirmar), device=aparelho, verbose=False)[0]
+                    melhor = max(rx.boxes.conf.tolist() or [0.0])
+                    recusadas = [a for a in confirmar if melhor < exige(a)]
                     if len(rx.boxes):
                         caixas = [tuple(map(float, b)) for b in rx.boxes.xyxy.tolist()]
                         n = len(caixas)
-                    else:
-                        e["recusado"] = t
-                        log(f"descartado (o modelo preciso não viu pessoa): {cam}")
+                    if recusadas:
+                        if len(recusadas) == len(confirmar):
+                            e["recusado"] = t
+                        log(f"descartado (o modelo preciso não confirmou com a certeza pedida): {cam} · {melhor:.0%}")
                         guardar(uid, cam, imagens[i], resultados.get(i, []), "descartado")
-                        disparadas = [a for a in disparadas if a not in de_pessoa]
+                        disparadas = [a for a in disparadas if a not in recusadas]
             if not disparadas:
                 continue
             for a in disparadas:
@@ -417,11 +609,17 @@ def main():
             d = ImageDraw.Draw(foto)
             for x1, y1, x2, y2 in caixas:
                 d.rectangle([x1, y1, x2, y2], outline=(124, 58, 237), width=4)
+            for lista in objetos.get(i, {}).values():
+                for (x1, y1, x2, y2), _ in lista:
+                    d.rectangle([x1, y1, x2, y2], outline=(52, 211, 153), width=4)
             buf = io.BytesIO()
             foto.save(buf, "JPEG", quality=85)
             nome = nomes_das_cameras(uid).get(cam, cam)
             motivos = list(dict.fromkeys(a["mensagem_alerta"] for a in disparadas))
+            objetivos = list(dict.fromkeys(a["objetivo"] for a in disparadas if a.get("objetivo")))
             texto = "🔔 " + "\n🔔 ".join(motivos) + f"\n📷 {nome}\n🕒 {agora.strftime('%d/%m %H:%M')}"
+            for o in objetivos:
+                texto += f"\n🎯 {o}"
             if n:
                 texto += f"\n👤 {n} pessoa{'s' if n > 1 else ''} na imagem"
             ok = alertar(uid, texto, buf.getvalue())

@@ -1,7 +1,7 @@
 // Análises personalizadas criadas pelo chat. Fase de teste: um arquivo local por conta (data/analises/<id>.json, fora do Git).
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { DIAS, TIPOS, type Analise, type AnaliseInput } from "./analises-tipos";
+import { ALVOS, DIAS, PRECISOES, TIPOS, type Alvo, type Analise, type AnaliseInput, type Precisao } from "./analises-tipos";
 
 export * from "./analises-tipos";
 
@@ -83,5 +83,13 @@ export function validarAnalise(x: unknown): AnaliseInput | string {
   if (!(a.limite === null || (Number.isInteger(a.limite) && (a.limite as number) > 0))) return "limite inválido";
   if (!(a.periodo === null || a.periodo === "hora" || a.periodo === "dia")) return "período inválido";
   if (typeof a.mensagem_alerta !== "string" || !a.mensagem_alerta.trim()) return "mensagem inválida";
-  return a as unknown as AnaliseInput;
+  if (!(a.precisao === undefined || a.precisao === null || PRECISOES.includes(a.precisao as Precisao))) return "precisão inválida";
+  if (!(a.alvo === undefined || a.alvo === null || ALVOS.includes(a.alvo as Alvo))) return "alvo inválido";
+  if (!(a.objetivo === undefined || a.objetivo === null || (typeof a.objetivo === "string" && a.objetivo.length <= 300))) return "objetivo inválido";
+  return {
+    ...(a as unknown as AnaliseInput),
+    precisao: (a.precisao as Precisao | null | undefined) ?? "equilibrada",
+    alvo: (a.alvo as Alvo | null | undefined) ?? "pessoa",
+    objetivo: typeof a.objetivo === "string" && a.objetivo.trim() ? a.objetivo.trim() : null,
+  };
 }

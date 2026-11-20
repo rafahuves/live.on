@@ -73,6 +73,13 @@ quando algo importante acontece (ex.: pessoa fora do horário, câmera tampada).
   que têm análise), dá número fixo por pessoa (rastreamento por sobreposição, `rastrear()`) e grava `data/ao-vivo/<id>.json`
   a cada rodada; `/api/ao-vivo` entrega isso + avisos recentes; `src/app/cameras/IaAoVivo.tsx` desenha as etiquetas
   ("Pessoa 3 · 92%") sobre o vídeo, o resumo e o painel "Avisos ao vivo". Não abre conexão a mais com o gravador.
+- **Precisão e entendimento (2026-11-20):** cada análise tem `alvo` (gatilho do YOLO: pessoa, pessoa_com_cachorro, cachorro,
+  gato, carro, moto, bicicleta, caminhao), `precisao` (sensivel/equilibrada/rigorosa/maxima) e `objetivo` (texto do cliente).
+  **Máxima**: o YOLO só dispara; o detector pega 1 foto HD pelo escudo e `POST /api/interno/verificar` → `src/lib/visao.ts`
+  (Claude ou Gemini) responde se a foto atende ao objetivo; só conta/avisa com confiança ≥ 0,7 (fila em thread, não trava).
+  Contagens por análise = eventos `contagem`; relatório em `src/lib/relatorios.ts`; relatório diário automático no Telegram
+  (`src/lib/relatorioDiario.ts`, padrão 20:00, `data/relatorio/<id>.json`); pausa de alertas em `data/pausa/<id>.json`.
+  O robô configura tudo: análises (criar/editar/apagar/precisão/alvo/objetivo), nomes das câmeras, hora do relatório, pausa.
 - **Assistente único (`src/lib/assistente.ts`)**: Claude (ANTHROPIC_API_KEY) ou Gemini grátis (GEMINI_API_KEY, testes),
   com ferramentas em `src/lib/ferramentas.ts` (salvar_analise, foto_camera, relatorio, situacao_telegram, alerta_teste,
   nome_da_empresa) e instruções em `src/lib/prompt.ts`. Usado pelo chat do site e pelo robô do Telegram
