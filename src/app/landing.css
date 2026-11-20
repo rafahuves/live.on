@@ -1,6 +1,5 @@
 /* Landing (página inicial) — visual escuro de "câmera à noite" com painéis de vidro.
    Tudo fica dentro de .lp: as outras páginas (câmeras, análises, login) continuam claras. */
-body:has(.lp) { background: #0b0814; }
 .lp {
   color-scheme: dark;
   --bg: #0b0814;          

@@ -6,12 +6,17 @@ import { getCurrentUser } from "@/lib/supabase/server";
 import { activeChannels, loadDvr } from "@/lib/dvr";
 import { loadPerfil } from "@/lib/perfil";
 import Wizard from "./Wizard";
+import "../dash.css";
 
 export const metadata = { title: "O que analisar | Live.On" };
 
 export default function ConfigurarPage() {
   return (
-    <div className="flex flex-1 flex-col">
+    <div className="dash flex flex-1 flex-col">
+      <div className="d-sky" aria-hidden="true">
+        <div className="d-glow a" />
+        <div className="d-glow b" />
+      </div>
       <AppHeader active="analises" />
       <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-10">
         <Suspense fallback={<p className="text-muted">Carregando…</p>}>

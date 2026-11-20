@@ -1,7 +1,6 @@
 /* Dashboard das câmeras com o mesmo visual da página inicial: noite de câmera, brilho roxo e painéis de vidro.
    Tudo fica dentro de .dash: as classes do Tailwind usadas nos componentes (bg-white, border-line, text-muted...)
    ganham aqui a versão escura, então os mesmos componentes servem nas páginas claras e nesta. */
-body:has(.dash) { background: #0b0814; }
 
 .dash {
   --d-bg: #0b0814;
@@ -13,6 +12,7 @@ body:has(.dash) { background: #0b0814; }
   --d-soft: rgba(255, 255, 255, 0.06);
   --d-brand-2: #a78bfa;
   color-scheme: dark;
+  min-height: 100%;
   position: relative;
   isolation: isolate;
   background: var(--d-bg);
@@ -65,6 +65,11 @@ body:has(.dash) { background: #0b0814; }
 .dash figure .bg-black { background: #05040a; }
 .dash figure { transition: transform 0.25s, border-color 0.25s; }
 .dash figure:hover { transform: translateY(-2px); border-color: rgba(167, 139, 250, 0.45); }
+
+/* chat das análises: balões, campo de mensagem e links */
+.dash .bg-white.p-4 .bg-soft { color: var(--d-fg); }
+.dash details summary { color: var(--d-fg); }
+.dash a.border-line:hover { border-color: rgba(167, 139, 250, 0.6); }
 
 /* título da página */
 .dash h1 { letter-spacing: -0.02em; }
